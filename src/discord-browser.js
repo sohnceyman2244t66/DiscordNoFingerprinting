@@ -178,9 +178,11 @@ class DiscordBrowser extends EventEmitter {
                 while (!navigationSucceeded && retryCount < 2) {
                     try {
                         await this.page.goto('https://discord.com', {
-                            waitUntil: 'domcontentloaded',
+                            waitUntil: 'networkidle2',
                             timeout: 30000
                         });
+                        // Wait a bit for page to be ready
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                         navigationSucceeded = true;
                     } catch (error) {
                         if (this.usingProxy && (
@@ -230,24 +232,41 @@ class DiscordBrowser extends EventEmitter {
                     }
                 }
 
-                // Wait for localStorage to be available
-                await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 5000 })
-                    .catch(() => console.log('localStorage not immediately available'));
+                // Only set token if we successfully navigated
+                if (navigationSucceeded) {
+                    // Wait for localStorage to be available
+                    try {
+                        await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 10000 });
 
-                // Set the token
-                await this.page.evaluate((token) => {
-                    localStorage.setItem('token', `"${token}"`);
-                    localStorage.setItem('locale', '"en-US"');
-                    localStorage.setItem('theme', '"dark"');
-                }, this.options.token);
+                        // Set the token
+                        await this.page.evaluate((token) => {
+                            localStorage.setItem('token', `"${token}"`);
+                            localStorage.setItem('locale', '"en-US"');
+                            localStorage.setItem('theme', '"dark"');
+                        }, this.options.token);
 
-                console.log('Token pre-set, navigating to Discord app...');
+                        console.log('Token set in localStorage');
+                    } catch (error) {
+                        console.log('Could not set token in localStorage, continuing anyway');
+                        console.log('Error:', error.message);
+                    }
+                }
+
+                console.log('Navigating to Discord app...');
 
                 // Now navigate to Discord app with token already in place
-                await this.page.goto('https://discord.com/channels/@me', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 60000
-                });
+                try {
+                    await this.page.goto('https://discord.com/channels/@me', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 60000
+                    });
+                } catch (navError) {
+                    console.log('Could not navigate to channels, trying app URL...');
+                    await this.page.goto('https://discord.com/app', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 30000
+                    });
+                }
 
                 // Still run autoLogin for verification
                 await this.autoLogin();
