@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Console Output</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #2d2d30;
+            padding: 10px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h3 {
+            font-size: 14px;
+            font-weight: normal;
+            color: #cccccc;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            cursor: pointer;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        .console-output {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            padding: 2px 4px;
+            border-left: 3px solid transparent;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .log-entry.info {
+            border-left-color: #3794ff;
+            color: #cccccc;
+        }
+
+        .log-entry.warn {
+            border-left-color: #ffcc00;
+            color: #ffcc00;
+            background: rgba(255, 204, 0, 0.1);
+        }
+
+        .log-entry.error {
+            border-left-color: #f48771;
+            color: #f48771;
+            background: rgba(244, 135, 113, 0.1);
+        }
+
+        .timestamp {
+            color: #608b4e;
+            margin-right: 10px;
+        }
+
+        .level {
+            font-weight: bold;
+            margin-right: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        .level.info {
+            background: #007acc;
+            color: white;
+        }
+
+        .level.warn {
+            background: #ff9800;
+            color: white;
+        }
+
+        .level.error {
+            background: #f44336;
+            color: white;
+        }
+
+        .message {
+            color: inherit;
+        }
+
+        #autoScroll {
+            margin-left: 10px;
+        }
+
+        .filter-section {
+            padding: 10px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .filter-section label {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        input[type="text"] {
+            background: #3c3c3c;
+            border: 1px solid #3e3e42;
+            color: #cccccc;
+            padding: 4px 8px;
+            flex: 1;
+            font-size: 12px;
+        }
+
+        .status-bar {
+            background: #007acc;
+            color: white;
+            padding: 4px 10px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h3>Runtime Console Output</h3>
+        <div class="controls">
+            <label>
+                <input type="checkbox" id="autoScroll" checked> Auto-scroll
+            </label>
+            <button onclick="clearConsole()">Clear</button>
+            <button onclick="saveLog()">Save Log</button>
+        </div>
+    </div>
+
+    <div class="filter-section">
+        <label>
+            <input type="checkbox" id="showInfo" checked> Info
+        </label>
+        <label>
+            <input type="checkbox" id="showWarn" checked> Warnings
+        </label>
+        <label>
+            <input type="checkbox" id="showError" checked> Errors
+        </label>
+        <input type="text" id="searchFilter" placeholder="Filter messages...">
+    </div>
+
+    <div class="console-output" id="consoleOutput"></div>
+
+    <div class="status-bar">
+        <span id="logCount">0 entries</span>
+        <span id="connectionStatus">Connected</span>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const fs = require('fs');
+        const path = require('path');
+
+        let logs = [];
+        const consoleOutput = document.getElementById('consoleOutput');
+        const autoScrollCheckbox = document.getElementById('autoScroll');
+        const searchFilter = document.getElementById('searchFilter');
+        const logCount = document.getElementById('logCount');
+
+        // Filter checkboxes
+        const showInfo = document.getElementById('showInfo');
+        const showWarn = document.getElementById('showWarn');
+        const showError = document.getElementById('showError');
+
+        // Listen for console logs from main process
+        ipcRenderer.on('console-log', (event, data) => {
+            addLogEntry(data);
+        });
+
+        function addLogEntry(data) {
+            logs.push(data);
+
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${data.level.toLowerCase()}`;
+
+            const timestamp = new Date(data.timestamp).toLocaleTimeString();
+            const levelClass = data.level.toLowerCase();
+
+            entry.innerHTML = `
+                <span class="timestamp">${timestamp}</span>
+                <span class="level ${levelClass}">${data.level}</span>
+                <span class="message">${escapeHtml(data.message)}</span>
+            `;
+
+            entry.dataset.level = data.level.toLowerCase();
+            entry.dataset.message = data.message.toLowerCase();
+
+            consoleOutput.appendChild(entry);
+
+            applyFilters();
+            updateStatus();
+
+            if (autoScrollCheckbox.checked) {
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearConsole() {
+            consoleOutput.innerHTML = '';
+            logs = [];
+            updateStatus();
+        }
+
+        function saveLog() {
+            const logContent = logs.map(log =>
+                `[${log.timestamp}] [${log.level}] ${log.message}`
+            ).join('\n');
+
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `console-log-${new Date().toISOString().replace(/:/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function applyFilters() {
+            const searchText = searchFilter.value.toLowerCase();
+            const entries = document.querySelectorAll('.log-entry');
+
+            entries.forEach(entry => {
+                const level = entry.dataset.level;
+                const message = entry.dataset.message;
+
+                let show = true;
+
+                // Level filters
+                if (level === 'info' && !showInfo.checked) show = false;
+                if (level === 'warn' && !showWarn.checked) show = false;
+                if (level === 'error' && !showError.checked) show = false;
+
+                // Search filter
+                if (searchText && !message.includes(searchText)) show = false;
+
+                entry.style.display = show ? 'block' : 'none';
+            });
+        }
+
+        function updateStatus() {
+            logCount.textContent = `${logs.length} entries`;
+        }
+
+        // Add event listeners for filters
+        showInfo.addEventListener('change', applyFilters);
+        showWarn.addEventListener('change', applyFilters);
+        showError.addEventListener('change', applyFilters);
+        searchFilter.addEventListener('input', applyFilters);
+
+        // Add some initial log
+        addLogEntry({
+            level: 'INFO',
+            message: 'Console window opened. Waiting for logs...',
+            timestamp: new Date().toISOString()
+        });
+
+        // Capture console output from the renderer process
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addLogEntry({
+                level: 'INFO',
+                message: args.map(a => String(a)).join(' '),
+                timestamp: new Date().toISOString()
+            });
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addLogEntry({
+                level: 'ERROR',
+                message: args.map(a => String(a)).join(' '),
+                timestamp: new Date().toISOString()
+            });
+        };
+
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addLogEntry({
+                level: 'WARN',
+                message: args.map(a => String(a)).join(' '),
+                timestamp: new Date().toISOString()
+            });
+        };
+    </script>
+</body>
+</html>

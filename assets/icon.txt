@@ -1,0 +1,8 @@
+Place your application icons here:
+
+- icon.png (256x256 or 512x512) - For Linux and general use
+- icon.ico - For Windows
+- icon.icns - For macOS
+
+You can create or download a shield/security icon for the application.
+The launcher will work without these files during development.

@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+
+# Electron
+*.log
+*.pid
+*.seed
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and config
+.env
+.env.local
+config.json
+
+# User data
+userData/
+cache/
+sessions/
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Package lock files (optional - uncomment if you prefer)
+# package-lock.json
+# yarn.lock
+
+# Chrome extensions (users should add their own)
+plugins/*
+!plugins/README.txt
+
+# Executables
+*.exe

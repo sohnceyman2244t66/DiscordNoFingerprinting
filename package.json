@@ -1,0 +1,68 @@
+{
+  "name": "discord-secure-launcher",
+  "version": "1.0.0",
+  "description": "Secure Discord launcher with proxy support and fingerprint protection",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "discord",
+    "privacy",
+    "security",
+    "launcher"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "chrome-launcher": "^1.1.0",
+    "electron-store": "^8.1.0",
+    "https-proxy-agent": "^7.0.6",
+    "puppeteer": "^21.7.0",
+    "puppeteer-core": "^21.7.0",
+    "uuid": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.discord.secure.launcher",
+    "productName": "Discord Secure Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false
+  }
+}
