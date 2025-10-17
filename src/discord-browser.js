@@ -108,11 +108,43 @@ class DiscordBrowser extends EventEmitter {
                     // Default format
                     proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
                 }
-                args.push(`--proxy-server=${proxyUrl}`);
-                console.log(`Using proxy: ${proxyUrl}`);
 
-                // Add proxy bypass for local addresses
-                args.push('--proxy-bypass-list=<-loopback>');
+                // Test if proxy is reachable (for non-SOCKS proxies)
+                if (this.options.proxy.protocol !== 'socks5' && this.options.proxy.protocol !== 'socks4') {
+                    const net = require('net');
+                    const isReachable = await new Promise((resolve) => {
+                        const socket = new net.Socket();
+                        socket.setTimeout(5000);
+                        socket.on('connect', () => {
+                            socket.destroy();
+                            resolve(true);
+                        });
+                        socket.on('timeout', () => {
+                            socket.destroy();
+                            resolve(false);
+                        });
+                        socket.on('error', () => {
+                            resolve(false);
+                        });
+                        socket.connect(this.options.proxy.port, this.options.proxy.host);
+                    });
+
+                    if (!isReachable) {
+                        console.warn(`Warning: Proxy ${this.options.proxy.host}:${this.options.proxy.port} appears to be unreachable`);
+                        console.log('Continuing without proxy...');
+                    } else {
+                        args.push(`--proxy-server=${proxyUrl}`);
+                        console.log(`Using proxy: ${proxyUrl}`);
+                        // Add proxy bypass for local addresses
+                        args.push('--proxy-bypass-list=<-loopback>');
+                    }
+                } else {
+                    // For SOCKS proxies, we can't easily test connectivity, so just use them
+                    args.push(`--proxy-server=${proxyUrl}`);
+                    console.log(`Using SOCKS proxy: ${proxyUrl} (connectivity not pre-tested)`);
+                    // Add proxy bypass for local addresses
+                    args.push('--proxy-bypass-list=<-loopback>');
+                }
             }
 
             // Disable WebRTC to prevent IP leaks
@@ -180,8 +212,13 @@ class DiscordBrowser extends EventEmitter {
                     if (error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
                         error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
                         error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')) {
-                        console.error('Proxy connection failed. Please check your proxy settings.');
-                        throw new Error('Proxy connection failed. Please verify your proxy server is running and accessible.');
+                        console.error('Proxy connection failed:', error.message);
+                        console.warn('SOCKS proxy appears to be down or unreachable.');
+                        console.warn('Please verify:');
+                        console.warn('1. The SOCKS proxy server is running');
+                        console.warn('2. The proxy address and port are correct');
+                        console.warn('3. Your firewall allows the connection');
+                        throw new Error('SOCKS proxy connection failed. Please disable proxy or fix proxy settings.');
                     }
                     throw error;
                 }
