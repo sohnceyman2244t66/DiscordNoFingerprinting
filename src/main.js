@@ -421,114 +421,68 @@ ipcMain.handle('check-token', async (event, token, proxySettings) => {
       proxySettings = store.get('proxySettings');
     }
 
-    const https = require('https');
-    const http = require('http');
+    const fetch = require('node-fetch');
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    const { SocksProxyAgent } = require('socks-proxy-agent');
 
-    // Prepare options
-    const apiPath = '/api/v10/users/@me';
-    const headers = {
-      'Authorization': token.startsWith('Bot ') ? token : token,
-      'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    // Set up fetch options
+    const fetchOptions = {
+      method: 'GET',
+      headers: {
+        'Authorization': token.startsWith('Bot ') ? token : token,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
     };
 
-    // If proxy is enabled, use different approach
+    // Add proxy agent if configured
     if (proxySettings && proxySettings.enabled && proxySettings.host) {
       console.log('Using proxy for token check:', proxySettings.host);
 
-      const { HttpsProxyAgent } = require('https-proxy-agent');
-      const proxyUrl = `${proxySettings.protocol}://${proxySettings.username ? proxySettings.username + ':' + proxySettings.password + '@' : ''}${proxySettings.host}:${proxySettings.port}`;
-      const agent = new HttpsProxyAgent(proxyUrl);
+      let proxyUrl;
+      if (proxySettings.username && proxySettings.password) {
+        proxyUrl = `${proxySettings.protocol}://${encodeURIComponent(proxySettings.username)}:${encodeURIComponent(proxySettings.password)}@${proxySettings.host}:${proxySettings.port}`;
+      } else {
+        proxyUrl = `${proxySettings.protocol}://${proxySettings.host}:${proxySettings.port}`;
+      }
 
-      return new Promise((resolve) => {
-        const options = {
-          hostname: 'discord.com',
-          port: 443,
-          path: apiPath,
-          method: 'GET',
-          headers: headers,
-          agent: agent
-        };
-
-        const req = https.request(options, (res) => {
-          let data = '';
-          res.on('data', (chunk) => data += chunk);
-          res.on('end', () => {
-            handleTokenResponse(res.statusCode, data, resolve);
-          });
-        });
-
-        req.on('error', (error) => {
-          console.error('Proxy request error:', error);
-          resolve({ success: false, error: `Proxy error: ${error.message}` });
-        });
-
-        req.end();
-      });
-    } else {
-      // Direct connection without proxy
-      return new Promise((resolve) => {
-        const options = {
-          hostname: 'discord.com',
-          port: 443,
-          path: apiPath,
-          method: 'GET',
-          headers: headers
-        };
-
-        const req = https.request(options, (res) => {
-          let data = '';
-          res.on('data', (chunk) => data += chunk);
-          res.on('end', () => {
-            handleTokenResponse(res.statusCode, data, resolve);
-          });
-        });
-
-        req.on('error', (error) => {
-          console.error('Direct request error:', error);
-          resolve({ success: false, error: error.message });
-        });
-
-        req.end();
-      });
+      // Use appropriate agent based on protocol
+      if (proxySettings.protocol.startsWith('socks')) {
+        fetchOptions.agent = new SocksProxyAgent(proxyUrl);
+      } else {
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+      }
     }
 
-    function handleTokenResponse(statusCode, data, resolve) {
-      try {
-        if (statusCode === 200) {
-          const userInfo = JSON.parse(data);
-          // Handle cases where global_name might be null
-          const username = userInfo.global_name || userInfo.username || 'Unknown User';
-          const discriminator = userInfo.discriminator && userInfo.discriminator !== '0' ? `#${userInfo.discriminator}` : '';
+    // Make the request
+    const response = await fetch('https://discord.com/api/v10/users/@me', fetchOptions);
+    const data = await response.json();
 
-          console.log(`Token valid! User: ${username}${discriminator}`);
-          console.log('User data:', userInfo);
+    if (response.ok) {
+      const username = data.global_name || data.username || 'Unknown User';
+      const discriminator = data.discriminator && data.discriminator !== '0' ? `#${data.discriminator}` : '';
 
-          resolve({
-            success: true,
-            username: username,
-            discriminator: discriminator,
-            fullUsername: `${username}${discriminator}`,
-            id: userInfo.id,
-            avatar: userInfo.avatar,
-            email: userInfo.email,
-            verified: userInfo.verified,
-            locale: userInfo.locale,
-            mfa_enabled: userInfo.mfa_enabled,
-            premium_type: userInfo.premium_type
-          });
-        } else if (statusCode === 401) {
-          console.error('Token invalid or expired');
-          resolve({ success: false, error: 'Invalid or expired token' });
-        } else {
-          console.error(`Discord API returned status code: ${statusCode}`);
-          console.error('Response data:', data);
-          resolve({ success: false, error: `API error: ${statusCode}` });
-        }
-      } catch (error) {
-        console.error('Error parsing Discord response:', error);
-        resolve({ success: false, error: 'Failed to parse response' });
-      }
+      console.log(`Token valid! User: ${username}${discriminator}`);
+      console.log('User data:', data);
+
+      return {
+        success: true,
+        username: username,
+        discriminator: discriminator,
+        fullUsername: `${username}${discriminator}`,
+        id: data.id,
+        avatar: data.avatar,
+        email: data.email,
+        verified: data.verified,
+        locale: data.locale,
+        mfa_enabled: data.mfa_enabled,
+        premium_type: data.premium_type
+      };
+    } else if (response.status === 401) {
+      return { success: false, error: 'Invalid or expired token' };
+    } else {
+      console.error('Discord API error:', response.status, data);
+      return { success: false, error: `API error: ${response.status}` };
     }
   } catch (error) {
     console.error('Failed to check token:', error);

@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const crypto = require('crypto');
 const os = require('os');
 const { app } = require('electron');
+const proxyChain = require('proxy-chain');
 
 class DiscordBrowser extends EventEmitter {
     constructor(options = {}) {
@@ -94,37 +95,35 @@ class DiscordBrowser extends EventEmitter {
                 console.log(`Loading ${extensions.length} extension(s)`);
             }
 
-            // Store whether we're using proxy for later reference
-            this.usingProxy = false;
-
-            // Add proxy if configured - smart detection
+            // Set up proxy using proxy-chain if configured
+            this.proxyUrl = null;
             if (this.options.proxy && this.options.proxy.host) {
-                let proxyUrl;
+                // Build the upstream proxy URL
+                let upstreamProxyUrl;
+                const { protocol, host, port, username, password } = this.options.proxy;
 
-                // IMPORTANT: Many "SOCKS5" proxies are actually HTTP proxies
-                // Chrome's error "ERR_SOCKS_CONNECTION_FAILED" means it's not a SOCKS proxy
-                // Since token check works with HTTP, let's be smart about this
-
-                if (this.options.proxy.protocol === 'socks5' || this.options.proxy.protocol === 'socks4') {
-                    // User selected SOCKS, but we'll store both formats
-                    this.socksProxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
-                    this.httpProxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
-
-                    // Try HTTP first since token check worked with HTTP
-                    proxyUrl = this.httpProxyUrl;
-                    console.log(`Note: Proxy selected as SOCKS5 but will try HTTP first (often works better)`);
+                // Construct proxy URL with auth if provided
+                if (username && password) {
+                    upstreamProxyUrl = `${protocol}://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
                 } else {
-                    // HTTP/HTTPS proxy
-                    proxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
+                    upstreamProxyUrl = `${protocol}://${host}:${port}`;
                 }
 
-                // Add proxy to Chrome args
-                this.browserArgs.push(`--proxy-server=${proxyUrl}`);
-                this.browserArgs.push('--proxy-bypass-list=<-loopback>');
-                this.usingProxy = true;
-                this.proxyHost = this.options.proxy.host;
-                this.proxyPort = this.options.proxy.port;
-                console.log(`Configured proxy: ${proxyUrl}`);
+                console.log(`Setting up proxy: ${protocol}://${host}:${port}`);
+
+                // Create a local proxy server that will forward to the actual proxy
+                // This is much more reliable than configuring Chrome directly
+                try {
+                    this.proxyUrl = await proxyChain.anonymizeProxy(upstreamProxyUrl);
+                    console.log(`Local proxy server started: ${this.proxyUrl}`);
+
+                    // Chrome will connect to our local proxy
+                    this.browserArgs.push(`--proxy-server=${this.proxyUrl}`);
+                    this.browserArgs.push('--proxy-bypass-list=<-loopback>');
+                } catch (error) {
+                    console.error('Failed to set up proxy:', error.message);
+                    throw new Error(`Proxy setup failed: ${error.message}`);
+                }
             }
 
             // Disable WebRTC to prevent IP leaks
@@ -179,114 +178,39 @@ class DiscordBrowser extends EventEmitter {
 
             // If we have a token, set it before navigation
             if (this.options.token) {
-                console.log('Pre-setting token before navigation...');
+                console.log('Setting up token authentication...');
 
-                // Navigate to a simple page first to establish localStorage
-                let navigationSucceeded = false;
-                let retryCount = 0;
+                // Navigate to Discord to establish localStorage
+                await this.page.goto('https://discord.com', {
+                    waitUntil: 'networkidle2',
+                    timeout: 30000
+                });
 
-                while (!navigationSucceeded && retryCount < 2) {
-                    try {
-                        await this.page.goto('https://discord.com', {
-                            waitUntil: 'networkidle2',
-                            timeout: 30000
-                        });
-                        // Wait a bit for page to be ready
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        navigationSucceeded = true;
-                    } catch (error) {
-                        if (this.usingProxy && retryCount === 0 && (
-                            error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
-                            error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
-                            error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')
-                        )) {
-                            console.warn(`Proxy connection failed: ${error.message}`);
+                // Wait a bit for page to be ready
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                            // If we tried HTTP for a "SOCKS" proxy, try actual SOCKS
-                            if (this.socksProxyUrl) {
-                                console.log('HTTP proxy failed, trying as SOCKS5...');
+                // Wait for localStorage and set token
+                await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 10000 });
 
-                                // Close current browser
-                                await this.browser.close();
+                await this.page.evaluate((token) => {
+                    localStorage.setItem('token', `"${token}"`);
+                    localStorage.setItem('locale', '"en-US"');
+                    localStorage.setItem('theme', '"dark"');
+                }, this.options.token);
 
-                                // Update args to use SOCKS URL
-                                this.browserArgs = this.browserArgs.map(arg => {
-                                    if (arg.includes('--proxy-server=')) {
-                                        return `--proxy-server=${this.socksProxyUrl}`;
-                                    }
-                                    return arg;
-                                });
+                console.log('Token set, navigating to Discord app...');
 
-                                // Relaunch with SOCKS
-                                this.browser = await puppeteer.launch({
-                                    headless: false,
-                                    args: this.browserArgs,
-                                    defaultViewport: null,
-                                    ignoreDefaultArgs: ['--enable-automation'],
-                                    executablePath: this.execPath
-                                });
-
-                                // Setup new page
-                                const pages = await this.browser.pages();
-                                if (pages.length > 0) {
-                                    await pages[0].close();
-                                }
-                                this.page = await this.browser.newPage();
-                                await this.page.setUserAgent(this.options.userAgent);
-                                await this.addStealthMeasures();
-
-                                console.log('Retrying with SOCKS5 protocol...');
-                                retryCount++;
-                                continue;
-                            }
-                        }
-
-                        // If proxy still doesn't work, that's an error - don't bypass
-                        if (this.usingProxy && error.message.includes('ERR_')) {
-                            console.error('Proxy connection failed. Please check:');
-                            console.error('1. Is the proxy actually running?');
-                            console.error('2. Is it HTTP or SOCKS5? Try changing the protocol.');
-                            console.error('3. Are the host and port correct?');
-                        }
-                        throw error;
-                    }
-                }
-
-                // Only set token if we successfully navigated
-                if (navigationSucceeded) {
-                    // Wait for localStorage to be available
-                    try {
-                        await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 10000 });
-
-                        // Set the token
-                        await this.page.evaluate((token) => {
-                            localStorage.setItem('token', `"${token}"`);
-                            localStorage.setItem('locale', '"en-US"');
-                            localStorage.setItem('theme', '"dark"');
-                        }, this.options.token);
-
-                        console.log('Token set in localStorage');
-                    } catch (error) {
-                        console.log('Could not set token in localStorage, continuing anyway');
-                        console.log('Error:', error.message);
-                    }
-                }
-
-                console.log('Navigating to Discord app...');
-
-                // Now navigate to Discord app with token already in place
-                try {
-                    await this.page.goto('https://discord.com/channels/@me', {
-                        waitUntil: 'domcontentloaded',
-                        timeout: 60000
-                    });
-                } catch (navError) {
-                    console.log('Could not navigate to channels, trying app URL...');
+                // Navigate to Discord app
+                await this.page.goto('https://discord.com/channels/@me', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 60000
+                }).catch(async () => {
+                    console.log('Channels URL failed, trying app URL...');
                     await this.page.goto('https://discord.com/app', {
                         waitUntil: 'domcontentloaded',
                         timeout: 30000
                     });
-                }
+                });
 
                 // Still run autoLogin for verification
                 await this.autoLogin();
@@ -586,6 +510,16 @@ class DiscordBrowser extends EventEmitter {
             if (this.browser) {
                 await this.browser.close().catch(() => {});
                 this.browser = null;
+            }
+
+            // Close the proxy server if it was created
+            if (this.proxyUrl) {
+                try {
+                    await proxyChain.closeAnonymizedProxy(this.proxyUrl, true);
+                    console.log('Proxy server closed');
+                } catch (error) {
+                    console.warn('Failed to close proxy server:', error);
+                }
             }
 
             // Clean up the temporary user data directory

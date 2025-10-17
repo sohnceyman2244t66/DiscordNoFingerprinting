@@ -24,8 +24,11 @@
     "chrome-launcher": "^1.1.0",
     "electron-store": "^8.1.0",
     "https-proxy-agent": "^7.0.6",
+    "node-fetch": "^2.7.0",
+    "proxy-chain": "^2.5.9",
     "puppeteer": "^21.7.0",
     "puppeteer-core": "^21.7.0",
+    "socks-proxy-agent": "^8.0.5",
     "uuid": "^9.0.1"
   },
   "build": {
