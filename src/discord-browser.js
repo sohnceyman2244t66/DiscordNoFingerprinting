@@ -96,8 +96,23 @@ class DiscordBrowser extends EventEmitter {
 
             // Add proxy if configured
             if (this.options.proxy && this.options.proxy.host) {
-                const proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
+                let proxyUrl;
+                // Handle different proxy protocols
+                if (this.options.proxy.protocol === 'socks5' || this.options.proxy.protocol === 'socks4') {
+                    // SOCKS proxy format for Chrome
+                    proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
+                } else if (this.options.proxy.protocol === 'http' || this.options.proxy.protocol === 'https') {
+                    // HTTP/HTTPS proxy format
+                    proxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
+                } else {
+                    // Default format
+                    proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
+                }
                 args.push(`--proxy-server=${proxyUrl}`);
+                console.log(`Using proxy: ${proxyUrl}`);
+
+                // Add proxy bypass for local addresses
+                args.push('--proxy-bypass-list=<-loopback>');
             }
 
             // Disable WebRTC to prevent IP leaks
@@ -156,10 +171,20 @@ class DiscordBrowser extends EventEmitter {
                 console.log('Pre-setting token before navigation...');
 
                 // Navigate to a simple page first to establish localStorage
-                await this.page.goto('https://discord.com', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 30000
-                });
+                try {
+                    await this.page.goto('https://discord.com', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 30000
+                    });
+                } catch (error) {
+                    if (error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
+                        error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
+                        error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')) {
+                        console.error('Proxy connection failed. Please check your proxy settings.');
+                        throw new Error('Proxy connection failed. Please verify your proxy server is running and accessible.');
+                    }
+                    throw error;
+                }
 
                 // Wait for localStorage to be available
                 await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 5000 })
