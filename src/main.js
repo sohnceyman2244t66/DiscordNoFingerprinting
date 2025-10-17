@@ -436,9 +436,9 @@ ipcMain.handle('check-token', async (event, token, proxySettings) => {
     if (proxySettings && proxySettings.enabled && proxySettings.host) {
       console.log('Using proxy for token check:', proxySettings.host);
 
-      const ProxyAgent = require('https-proxy-agent');
+      const { HttpsProxyAgent } = require('https-proxy-agent');
       const proxyUrl = `${proxySettings.protocol}://${proxySettings.username ? proxySettings.username + ':' + proxySettings.password + '@' : ''}${proxySettings.host}:${proxySettings.port}`;
-      const agent = new ProxyAgent(proxyUrl);
+      const agent = new HttpsProxyAgent(proxyUrl);
 
       return new Promise((resolve) => {
         const options = {
