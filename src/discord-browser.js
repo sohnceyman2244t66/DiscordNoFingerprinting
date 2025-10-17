@@ -97,24 +97,34 @@ class DiscordBrowser extends EventEmitter {
             // Store whether we're using proxy for later reference
             this.usingProxy = false;
 
-            // Add proxy if configured - but don't let it break everything
+            // Add proxy if configured - smart detection
             if (this.options.proxy && this.options.proxy.host) {
                 let proxyUrl;
 
-                // Format proxy URL based on protocol
+                // IMPORTANT: Many "SOCKS5" proxies are actually HTTP proxies
+                // Chrome's error "ERR_SOCKS_CONNECTION_FAILED" means it's not a SOCKS proxy
+                // Since token check works with HTTP, let's be smart about this
+
                 if (this.options.proxy.protocol === 'socks5' || this.options.proxy.protocol === 'socks4') {
-                    proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
+                    // User selected SOCKS, but we'll store both formats
+                    this.socksProxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
+                    this.httpProxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
+
+                    // Try HTTP first since token check worked with HTTP
+                    proxyUrl = this.httpProxyUrl;
+                    console.log(`Note: Proxy selected as SOCKS5 but will try HTTP first (often works better)`);
                 } else {
-                    // For HTTP/HTTPS, Chrome expects http:// format
+                    // HTTP/HTTPS proxy
                     proxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
                 }
 
-                // Add proxy to Chrome this.browserArgs
+                // Add proxy to Chrome args
                 this.browserArgs.push(`--proxy-server=${proxyUrl}`);
                 this.browserArgs.push('--proxy-bypass-list=<-loopback>');
                 this.usingProxy = true;
+                this.proxyHost = this.options.proxy.host;
+                this.proxyPort = this.options.proxy.port;
                 console.log(`Configured proxy: ${proxyUrl}`);
-                console.log('Note: If proxy fails, Discord will load without proxy protection');
             }
 
             // Disable WebRTC to prevent IP leaks
@@ -185,34 +195,38 @@ class DiscordBrowser extends EventEmitter {
                         await new Promise(resolve => setTimeout(resolve, 2000));
                         navigationSucceeded = true;
                     } catch (error) {
-                        if (this.usingProxy && (
+                        if (this.usingProxy && retryCount === 0 && (
                             error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
                             error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
                             error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')
                         )) {
                             console.warn(`Proxy connection failed: ${error.message}`);
 
-                            if (retryCount === 0) {
-                                console.log('Restarting browser without proxy...');
+                            // If we tried HTTP for a "SOCKS" proxy, try actual SOCKS
+                            if (this.socksProxyUrl) {
+                                console.log('HTTP proxy failed, trying as SOCKS5...');
 
                                 // Close current browser
                                 await this.browser.close();
 
-                                // Restart without proxy
-                                const browserArgsWithoutProxy = this.browserArgs.filter(arg =>
-                                    !arg.includes('--proxy-server=') &&
-                                    !arg.includes('--proxy-bypass-list=')
-                                );
+                                // Update args to use SOCKS URL
+                                this.browserArgs = this.browserArgs.map(arg => {
+                                    if (arg.includes('--proxy-server=')) {
+                                        return `--proxy-server=${this.socksProxyUrl}`;
+                                    }
+                                    return arg;
+                                });
 
+                                // Relaunch with SOCKS
                                 this.browser = await puppeteer.launch({
                                     headless: false,
-                                    args: browserArgsWithoutProxy,
+                                    args: this.browserArgs,
                                     defaultViewport: null,
                                     ignoreDefaultArgs: ['--enable-automation'],
                                     executablePath: this.execPath
                                 });
 
-                                // Close default page and create new one
+                                // Setup new page
                                 const pages = await this.browser.pages();
                                 if (pages.length > 0) {
                                     await pages[0].close();
@@ -221,12 +235,18 @@ class DiscordBrowser extends EventEmitter {
                                 await this.page.setUserAgent(this.options.userAgent);
                                 await this.addStealthMeasures();
 
-                                console.log('Browser restarted without proxy - IP not protected!');
-                                this.usingProxy = false;
-                                this.emit('proxy-warning', 'Proxy failed - continuing without protection');
+                                console.log('Retrying with SOCKS5 protocol...');
                                 retryCount++;
                                 continue;
                             }
+                        }
+
+                        // If proxy still doesn't work, that's an error - don't bypass
+                        if (this.usingProxy && error.message.includes('ERR_')) {
+                            console.error('Proxy connection failed. Please check:');
+                            console.error('1. Is the proxy actually running?');
+                            console.error('2. Is it HTTP or SOCKS5? Try changing the protocol.');
+                            console.error('3. Are the host and port correct?');
                         }
                         throw error;
                     }
