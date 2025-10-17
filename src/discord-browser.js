@@ -72,7 +72,7 @@ class DiscordBrowser extends EventEmitter {
             }
 
             // Prepare browser arguments
-            const args = [
+            this.browserArgs = [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
@@ -89,74 +89,43 @@ class DiscordBrowser extends EventEmitter {
 
             // Add extensions if any
             if (extensions.length > 0) {
-                args.push(`--load-extension=${extensions.join(',')}`);
-                args.push('--disable-extensions-except=' + extensions.join(','));
+                this.browserArgs.push(`--load-extension=${extensions.join(',')}`);
+                this.browserArgs.push('--disable-extensions-except=' + extensions.join(','));
                 console.log(`Loading ${extensions.length} extension(s)`);
             }
 
-            // Add proxy if configured
+            // Store whether we're using proxy for later reference
+            this.usingProxy = false;
+
+            // Add proxy if configured - but don't let it break everything
             if (this.options.proxy && this.options.proxy.host) {
                 let proxyUrl;
-                // Handle different proxy protocols
+
+                // Format proxy URL based on protocol
                 if (this.options.proxy.protocol === 'socks5' || this.options.proxy.protocol === 'socks4') {
-                    // SOCKS proxy format for Chrome
                     proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
-                } else if (this.options.proxy.protocol === 'http' || this.options.proxy.protocol === 'https') {
-                    // HTTP/HTTPS proxy format
+                } else {
+                    // For HTTP/HTTPS, Chrome expects http:// format
                     proxyUrl = `http://${this.options.proxy.host}:${this.options.proxy.port}`;
-                } else {
-                    // Default format
-                    proxyUrl = `${this.options.proxy.protocol}://${this.options.proxy.host}:${this.options.proxy.port}`;
                 }
 
-                // Test if proxy is reachable (for non-SOCKS proxies)
-                if (this.options.proxy.protocol !== 'socks5' && this.options.proxy.protocol !== 'socks4') {
-                    const net = require('net');
-                    const isReachable = await new Promise((resolve) => {
-                        const socket = new net.Socket();
-                        socket.setTimeout(5000);
-                        socket.on('connect', () => {
-                            socket.destroy();
-                            resolve(true);
-                        });
-                        socket.on('timeout', () => {
-                            socket.destroy();
-                            resolve(false);
-                        });
-                        socket.on('error', () => {
-                            resolve(false);
-                        });
-                        socket.connect(this.options.proxy.port, this.options.proxy.host);
-                    });
-
-                    if (!isReachable) {
-                        console.warn(`Warning: Proxy ${this.options.proxy.host}:${this.options.proxy.port} appears to be unreachable`);
-                        console.log('Continuing without proxy...');
-                    } else {
-                        args.push(`--proxy-server=${proxyUrl}`);
-                        console.log(`Using proxy: ${proxyUrl}`);
-                        // Add proxy bypass for local addresses
-                        args.push('--proxy-bypass-list=<-loopback>');
-                    }
-                } else {
-                    // For SOCKS proxies, we can't easily test connectivity, so just use them
-                    args.push(`--proxy-server=${proxyUrl}`);
-                    console.log(`Using SOCKS proxy: ${proxyUrl} (connectivity not pre-tested)`);
-                    // Add proxy bypass for local addresses
-                    args.push('--proxy-bypass-list=<-loopback>');
-                }
+                // Add proxy to Chrome this.browserArgs
+                this.browserArgs.push(`--proxy-server=${proxyUrl}`);
+                this.browserArgs.push('--proxy-bypass-list=<-loopback>');
+                this.usingProxy = true;
+                console.log(`Configured proxy: ${proxyUrl}`);
+                console.log('Note: If proxy fails, Discord will load without proxy protection');
             }
 
             // Disable WebRTC to prevent IP leaks
-            args.push('--disable-webrtc-hw-encoding');
-            args.push('--disable-webrtc-hw-decoding');
-            args.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+            this.browserArgs.push('--disable-webrtc-hw-encoding');
+            this.browserArgs.push('--disable-webrtc-hw-decoding');
+            this.browserArgs.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
 
             // Launch browser with anti-detection measures
             // Try to find Chrome executable
-            let execPath;
             try {
-                execPath = puppeteer.executablePath();
+                this.execPath = puppeteer.executablePath();
             } catch (e) {
                 // Fallback to system Chrome if Puppeteer's bundled Chrome fails
                 const possiblePaths = [
@@ -164,15 +133,15 @@ class DiscordBrowser extends EventEmitter {
                     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
                     process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
                 ];
-                execPath = possiblePaths.find(p => require('fs').existsSync(p));
+                this.execPath = possiblePaths.find(p => require('fs').existsSync(p));
             }
 
             this.browser = await puppeteer.launch({
                 headless: false,
-                args: args,
+                args: this.browserArgs,
                 defaultViewport: null,
                 ignoreDefaultArgs: ['--enable-automation'],
-                executablePath: execPath
+                executablePath: this.execPath
             });
 
             // Close the default blank page that Puppeteer opens
@@ -203,24 +172,62 @@ class DiscordBrowser extends EventEmitter {
                 console.log('Pre-setting token before navigation...');
 
                 // Navigate to a simple page first to establish localStorage
-                try {
-                    await this.page.goto('https://discord.com', {
-                        waitUntil: 'domcontentloaded',
-                        timeout: 30000
-                    });
-                } catch (error) {
-                    if (error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
-                        error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
-                        error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')) {
-                        console.error('Proxy connection failed:', error.message);
-                        console.warn('SOCKS proxy appears to be down or unreachable.');
-                        console.warn('Please verify:');
-                        console.warn('1. The SOCKS proxy server is running');
-                        console.warn('2. The proxy address and port are correct');
-                        console.warn('3. Your firewall allows the connection');
-                        throw new Error('SOCKS proxy connection failed. Please disable proxy or fix proxy settings.');
+                let navigationSucceeded = false;
+                let retryCount = 0;
+
+                while (!navigationSucceeded && retryCount < 2) {
+                    try {
+                        await this.page.goto('https://discord.com', {
+                            waitUntil: 'domcontentloaded',
+                            timeout: 30000
+                        });
+                        navigationSucceeded = true;
+                    } catch (error) {
+                        if (this.usingProxy && (
+                            error.message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
+                            error.message.includes('ERR_PROXY_CONNECTION_FAILED') ||
+                            error.message.includes('ERR_TUNNEL_CONNECTION_FAILED')
+                        )) {
+                            console.warn(`Proxy connection failed: ${error.message}`);
+
+                            if (retryCount === 0) {
+                                console.log('Restarting browser without proxy...');
+
+                                // Close current browser
+                                await this.browser.close();
+
+                                // Restart without proxy
+                                const browserArgsWithoutProxy = this.browserArgs.filter(arg =>
+                                    !arg.includes('--proxy-server=') &&
+                                    !arg.includes('--proxy-bypass-list=')
+                                );
+
+                                this.browser = await puppeteer.launch({
+                                    headless: false,
+                                    args: browserArgsWithoutProxy,
+                                    defaultViewport: null,
+                                    ignoreDefaultArgs: ['--enable-automation'],
+                                    executablePath: this.execPath
+                                });
+
+                                // Close default page and create new one
+                                const pages = await this.browser.pages();
+                                if (pages.length > 0) {
+                                    await pages[0].close();
+                                }
+                                this.page = await this.browser.newPage();
+                                await this.page.setUserAgent(this.options.userAgent);
+                                await this.addStealthMeasures();
+
+                                console.log('Browser restarted without proxy - IP not protected!');
+                                this.usingProxy = false;
+                                this.emit('proxy-warning', 'Proxy failed - continuing without protection');
+                                retryCount++;
+                                continue;
+                            }
+                        }
+                        throw error;
                     }
-                    throw error;
                 }
 
                 // Wait for localStorage to be available
