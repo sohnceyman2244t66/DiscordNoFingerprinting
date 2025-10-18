@@ -77,41 +77,71 @@ class DiscordBrowser extends EventEmitter {
             this.userDataDir = this.browserProfile.directory;
             console.log('Using persistent profile directory:', this.userDataDir);
 
-            // Ensure Default directory exists
+            // Ensure Default directory and critical subdirectories exist
             const defaultProfileDir = path.join(this.userDataDir, 'Default');
             await fs.mkdir(defaultProfileDir, { recursive: true });
 
-            // Update Chrome Preferences with current settings (if needed)
+            // Ensure critical Chrome directories exist for data persistence
+            const cookiesDir = path.join(defaultProfileDir, 'Network');
+            const localStorageDir = path.join(defaultProfileDir, 'Local Storage');
+            const sessionStorageDir = path.join(defaultProfileDir, 'Session Storage');
+            await fs.mkdir(cookiesDir, { recursive: true });
+            await fs.mkdir(localStorageDir, { recursive: true });
+            await fs.mkdir(sessionStorageDir, { recursive: true });
+
+            // Only update WebRTC preferences if they haven't been set or if preferences don't exist
             const preferencesPath = path.join(defaultProfileDir, 'Preferences');
 
-            // Check if preferences exist, update WebRTC settings
-            let preferences = {};
+            let needsWebRTCUpdate = false;
             try {
                 const existingPrefs = await fs.readFile(preferencesPath, 'utf-8');
-                preferences = JSON.parse(existingPrefs);
+                const preferences = JSON.parse(existingPrefs);
+
+                // Only update if WebRTC settings don't exist or are different
+                if (!preferences.webrtc) {
+                    needsWebRTCUpdate = true;
+                }
+
+                if (needsWebRTCUpdate) {
+                    // Configure WebRTC based on user preference
+                    if (this.options.blockWebRTC) {
+                        // Block WebRTC leaks
+                        preferences.webrtc = {
+                            "ip_handling_policy": "disable_non_proxied_udp",
+                            "multiple_routes_enabled": false,
+                            "nonproxied_udp_enabled": false
+                        };
+                    } else {
+                        // Allow WebRTC through proxy (for UDP-capable proxies)
+                        preferences.webrtc = {
+                            "ip_handling_policy": "default_public_and_private_interfaces",
+                            "multiple_routes_enabled": true,
+                            "nonproxied_udp_enabled": true
+                        };
+                    }
+
+                    await fs.writeFile(preferencesPath, JSON.stringify(preferences, null, 2));
+                    console.log('Updated Chrome Preferences with WebRTC settings');
+                } else {
+                    console.log('Chrome Preferences already configured, preserving existing data');
+                }
             } catch (e) {
-                // Preferences don't exist yet
-            }
-
-            // Configure WebRTC based on user preference
-            if (this.options.blockWebRTC) {
-                // Block WebRTC leaks
-                preferences.webrtc = {
-                    "ip_handling_policy": "disable_non_proxied_udp",
-                    "multiple_routes_enabled": false,
-                    "nonproxied_udp_enabled": false
+                // Preferences don't exist yet - create minimal preferences with WebRTC settings
+                const newPreferences = {
+                    webrtc: this.options.blockWebRTC ? {
+                        "ip_handling_policy": "disable_non_proxied_udp",
+                        "multiple_routes_enabled": false,
+                        "nonproxied_udp_enabled": false
+                    } : {
+                        "ip_handling_policy": "default_public_and_private_interfaces",
+                        "multiple_routes_enabled": true,
+                        "nonproxied_udp_enabled": true
+                    }
                 };
-            } else {
-                // Allow WebRTC through proxy (for UDP-capable proxies)
-                preferences.webrtc = {
-                    "ip_handling_policy": "default_public_and_private_interfaces",
-                    "multiple_routes_enabled": true,
-                    "nonproxied_udp_enabled": true
-                };
-            }
 
-            await fs.writeFile(preferencesPath, JSON.stringify(preferences, null, 2));
-            console.log('Updated Chrome Preferences with WebRTC leak protection');
+                await fs.writeFile(preferencesPath, JSON.stringify(newPreferences, null, 2));
+                console.log('Created initial Chrome Preferences with WebRTC settings');
+            }
 
             // Create plugins folder in the application's directory (where the exe is located)
             // In development, this will be in the project folder
@@ -160,7 +190,12 @@ class DiscordBrowser extends EventEmitter {
                 '--flag-switches-begin',
                 '--flag-switches-end',
                 '--origin-trial-disabled-features=WebGPU',
-                '--disable-features=BackForwardCache'
+                '--disable-features=BackForwardCache',
+                // Ensure cookies and storage are persisted
+                '--enable-automation=false',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                `--profile-directory=Default`
             ];
 
             // Add extensions if any
@@ -794,12 +829,20 @@ class DiscordBrowser extends EventEmitter {
 
     async cleanup() {
         try {
+            // Give Chrome time to save all data before closing
             if (this.page) {
+                // Navigate to blank page to trigger any pending saves
+                await this.page.goto('about:blank').catch(() => {});
+                // Wait a bit for Chrome to save data
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 await this.page.close().catch(() => {});
                 this.page = null;
             }
             if (this.browser) {
+                // Gracefully close the browser to ensure data is saved
                 await this.browser.close().catch(() => {});
+                // Wait a bit more to ensure all data is written to disk
+                await new Promise(resolve => setTimeout(resolve, 500));
                 this.browser = null;
             }
 
