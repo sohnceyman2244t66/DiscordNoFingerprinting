@@ -163,7 +163,13 @@ class DiscordBrowser extends EventEmitter {
                     const pluginPath = path.join(pluginsDir, file);
                     const stat = await fs.stat(pluginPath);
                     if (stat.isDirectory()) {
-                        extensions.push(pluginPath);
+                        // Check if it's a valid Chrome extension (has manifest.json)
+                        const manifestPath = path.join(pluginPath, 'manifest.json');
+                        if (require('fs').existsSync(manifestPath)) {
+                            extensions.push(pluginPath);
+                        } else {
+                            console.log(`Skipping ${file} - not a valid extension (no manifest.json)`);
+                        }
                     }
                 }
             } catch (error) {
@@ -192,22 +198,21 @@ class DiscordBrowser extends EventEmitter {
                 '--origin-trial-disabled-features=WebGPU',
                 '--disable-features=BackForwardCache',
                 // Ensure cookies and storage are persisted
-                '--enable-automation=false',
-                '--password-store=basic',
-                '--use-mock-keychain',
-                `--profile-directory=Default`
+                '--password-store=basic'
             ];
 
             // Add extensions if any
             if (extensions.length > 0) {
-                this.browserArgs.push(`--load-extension=${extensions.join(',')}`);
-                this.browserArgs.push('--disable-extensions-except=' + extensions.join(','));
-                console.log(`Loading ${extensions.length} extension(s)`);
+                console.log(`Loading ${extensions.length} extension(s) from ${pluginsDir}`);
+                // Don't load extensions for now - they may cause launch failures
+                // this.browserArgs.push(`--load-extension=${extensions.join(',')}`);
+                // this.browserArgs.push('--disable-extensions-except=' + extensions.join(','));
             }
 
             // Find Chrome executable before using it
             try {
                 this.execPath = puppeteer.executablePath();
+                console.log('Using Puppeteer Chrome at:', this.execPath);
             } catch (e) {
                 // Fallback to system Chrome if Puppeteer's bundled Chrome fails
                 const possiblePaths = [
@@ -219,6 +224,13 @@ class DiscordBrowser extends EventEmitter {
                 if (!this.execPath) {
                     throw new Error('Chrome executable not found. Please install Google Chrome.');
                 }
+                console.log('Using system Chrome at:', this.execPath);
+            }
+
+            // Check if Chrome executable exists and is accessible
+            if (!require('fs').existsSync(this.execPath)) {
+                console.error('Chrome executable not found at:', this.execPath);
+                throw new Error('Chrome executable not found at: ' + this.execPath);
             }
 
             // Set up proxy using proxy-chain if configured
@@ -281,6 +293,7 @@ class DiscordBrowser extends EventEmitter {
             }
 
             // Launch browser with anti-detection measures
+            console.log('Launching Chrome with args:', this.browserArgs.join(' '));
 
             this.browser = await puppeteer.launch({
                 headless: false,
