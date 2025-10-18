@@ -488,77 +488,96 @@ document.addEventListener('DOMContentLoaded', async () => {
         const hardware = profile.hardware || {};
         const location = profile.location || {};
 
-        // Update editable fields
+        // Update editable fields with null checks
         // CPU
         if (hardware.cpu) {
-            document.getElementById('cpuModel').value = hardware.cpu;
+            const cpuModel = document.getElementById('cpuModel');
+            if (cpuModel) cpuModel.value = hardware.cpu;
         }
         if (hardware.cores) {
-            document.getElementById('cpuCores').value = hardware.cores;
+            const cpuCores = document.getElementById('cpuCores');
+            if (cpuCores) cpuCores.value = hardware.cores;
         }
         if (hardware.threads) {
-            document.getElementById('cpuThreads').value = hardware.threads;
+            const cpuThreads = document.getElementById('cpuThreads');
+            if (cpuThreads) cpuThreads.value = hardware.threads;
         }
 
         // GPU - EXACT vendor and renderer
         if (hardware.gpuVendor && hardware.gpuRenderer) {
             const gpuValue = hardware.gpuVendor + '|' + hardware.gpuRenderer;
             const gpuSelect = document.getElementById('gpuSelect');
-            // Try to find matching option
-            for (let i = 0; i < gpuSelect.options.length; i++) {
-                if (gpuSelect.options[i].value === gpuValue) {
-                    gpuSelect.selectedIndex = i;
-                    break;
+            if (gpuSelect) {
+                // Try to find matching option
+                for (let i = 0; i < gpuSelect.options.length; i++) {
+                    if (gpuSelect.options[i].value === gpuValue) {
+                        gpuSelect.selectedIndex = i;
+                        break;
+                    }
                 }
             }
         }
         if (hardware.gpuVram !== undefined) {
-            document.getElementById('gpuVram').value = hardware.gpuVram;
+            const gpuVram = document.getElementById('gpuVram');
+            if (gpuVram) gpuVram.value = hardware.gpuVram;
         }
 
         // RAM
         if (hardware.memory) {
-            document.getElementById('ramSize').value = hardware.memory;
+            const ramSize = document.getElementById('ramSize');
+            if (ramSize) ramSize.value = hardware.memory;
         }
         if (hardware.memorySpeed) {
-            document.getElementById('ramSpeed').value = hardware.memorySpeed;
+            const ramSpeed = document.getElementById('ramSpeed');
+            if (ramSpeed) ramSpeed.value = hardware.memorySpeed;
         }
 
         // Screen
         if (hardware.screen) {
             const screenRes = `${hardware.screen.width}x${hardware.screen.height}`;
-            document.getElementById('screenResolution').value = screenRes;
-            document.getElementById('screenWidth').value = hardware.screen.width;
-            document.getElementById('screenHeight').value = hardware.screen.height;
+            const screenResolution = document.getElementById('screenResolution');
+            const screenWidth = document.getElementById('screenWidth');
+            const screenHeight = document.getElementById('screenHeight');
+
+            if (screenResolution) screenResolution.value = screenRes;
+            if (screenWidth) screenWidth.value = hardware.screen.width;
+            if (screenHeight) screenHeight.value = hardware.screen.height;
+
             if (hardware.screen.refreshRate) {
-                document.getElementById('screenRefresh').value = hardware.screen.refreshRate;
+                const screenRefresh = document.getElementById('screenRefresh');
+                if (screenRefresh) screenRefresh.value = hardware.screen.refreshRate;
             }
         }
 
         // Audio
         if (hardware.audio) {
-            document.getElementById('audioDevice').value = hardware.audio;
+            const audioDevice = document.getElementById('audioDevice');
+            if (audioDevice) audioDevice.value = hardware.audio;
         }
 
         // Network
         if (hardware.network) {
-            document.getElementById('networkAdapter').value = hardware.network;
+            const networkAdapter = document.getElementById('networkAdapter');
+            if (networkAdapter) networkAdapter.value = hardware.network;
         }
 
         // OS
         if (hardware.os && hardware.osVersion) {
             const osValue = hardware.os + '|' + hardware.osVersion;
-            document.getElementById('osVersion').value = osValue;
+            const osVersion = document.getElementById('osVersion');
+            if (osVersion) osVersion.value = osValue;
         }
 
         // Location
         if (location.timezone) {
             const timezoneValue = `${location.timezone}|${location.timezoneOffset || 0}|${location.language || 'en-US'}`;
             const timezoneSelect = document.getElementById('timezone');
-            for (let i = 0; i < timezoneSelect.options.length; i++) {
-                if (timezoneSelect.options[i].value.startsWith(location.timezone)) {
-                    timezoneSelect.selectedIndex = i;
-                    break;
+            if (timezoneSelect) {
+                for (let i = 0; i < timezoneSelect.options.length; i++) {
+                    if (timezoneSelect.options[i].value.startsWith(location.timezone)) {
+                        timezoneSelect.selectedIndex = i;
+                        break;
+                    }
                 }
             }
         }
@@ -789,23 +808,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Global randomization functions for hardware settings
 function randomizeUserAgent() {
     const userAgentSelect = document.getElementById('userAgentSelect');
-    const agents = ['chrome120', 'chrome121', 'chrome122', 'firefox121', 'edge120'];
-    userAgentSelect.value = agents[Math.floor(Math.random() * agents.length)];
+    if (userAgentSelect) {
+        const agents = ['chrome120', 'chrome121', 'chrome122', 'firefox121', 'edge120'];
+        userAgentSelect.value = agents[Math.floor(Math.random() * agents.length)];
+    }
 }
 
 function randomizeCPU() {
     const cpuModel = document.getElementById('cpuModel');
-    const cpus = [
-        'Intel Core i7-10700K',
-        'Intel Core i5-10400F',
-        'Intel Core i9-9900K',
-        'AMD Ryzen 5 5600X',
-        'AMD Ryzen 7 5800X',
-        'Intel Core i7-11700K',
-        'AMD Ryzen 9 5900X',
-        'Intel Core i5-11400F'
-    ];
-    cpuModel.value = cpus[Math.floor(Math.random() * cpus.length)];
+    if (cpuModel) {
+        const cpus = [
+            'Intel Core i7-10700K',
+            'Intel Core i5-10400F',
+            'Intel Core i9-9900K',
+            'AMD Ryzen 5 5600X',
+            'AMD Ryzen 7 5800X',
+            'Intel Core i7-11700K',
+            'AMD Ryzen 9 5900X',
+            'Intel Core i5-11400F'
+        ];
+        cpuModel.value = cpus[Math.floor(Math.random() * cpus.length)];
+    }
 }
 
 function randomizeCores() {
