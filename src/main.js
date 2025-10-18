@@ -117,8 +117,8 @@ function createWindow() {
 
   // Create the browser window
   const windowConfig = {
-    width: 500,
-    height: 700,
+    width: 800,
+    height: 900,
     resizable: true, // Made resizable for better debugging
     frame: true,
     transparent: false,
@@ -345,7 +345,12 @@ ipcMain.handle('launch-discord', async (event, options) => {
     // Close existing browser if any
     if (discordBrowser) {
       console.log('Closing existing Discord browser instance');
-      await discordBrowser.close();
+      try {
+        await discordBrowser.close();
+      } catch (e) {
+        console.log('Browser already closed or errored:', e.message);
+      }
+      discordBrowser = null; // Always clear the reference
     }
 
     // Create new Discord browser instance
@@ -373,6 +378,7 @@ ipcMain.handle('launch-discord', async (event, options) => {
       // Monitor for Discord window closure
       discordBrowser.on('closed', () => {
         console.log('Discord browser closed');
+        discordBrowser = null; // Clear the reference when browser closes
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.show();
         }
@@ -487,6 +493,217 @@ ipcMain.handle('check-token', async (event, token, proxySettings) => {
   } catch (error) {
     console.error('Failed to check token:', error);
     return { success: false, error: error.message };
+  }
+});
+
+// Hardware Profile Management IPC Handlers
+const hardwareProfileManager = require('./hardware-profiles');
+const browserProfileManager = require('./browser-profiles');
+
+// Hardware profiles
+ipcMain.handle('get-current-profile', async () => {
+  try {
+    return hardwareProfileManager.getCurrentProfile();
+  } catch (error) {
+    console.error('Failed to get current profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('set-current-profile', async (event, profile) => {
+  try {
+    return hardwareProfileManager.setCurrentProfile(profile);
+  } catch (error) {
+    console.error('Failed to set current profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('set-current-hardware-profile', async (event, profile) => {
+  try {
+    return hardwareProfileManager.setCurrentProfile(profile);
+  } catch (error) {
+    console.error('Failed to set current hardware profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('generate-profile', async (event, template) => {
+  try {
+    const profile = hardwareProfileManager.generateProfile(template);
+    hardwareProfileManager.setCurrentProfile(profile);
+    return profile;
+  } catch (error) {
+    console.error('Failed to generate profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('generate-hardware-profile', async (event, template) => {
+  try {
+    return hardwareProfileManager.generateProfile(template);
+  } catch (error) {
+    console.error('Failed to generate hardware profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('save-profile', async (event, profile) => {
+  try {
+    return hardwareProfileManager.saveProfile(profile);
+  } catch (error) {
+    console.error('Failed to save profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('load-profile', async (event, id) => {
+  try {
+    return hardwareProfileManager.loadProfile(id);
+  } catch (error) {
+    console.error('Failed to load profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-all-profiles', async () => {
+  try {
+    return hardwareProfileManager.getAllProfiles();
+  } catch (error) {
+    console.error('Failed to get all profiles:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('delete-profile', async (event, id) => {
+  try {
+    return hardwareProfileManager.deleteProfile(id);
+  } catch (error) {
+    console.error('Failed to delete profile:', error);
+    throw error;
+  }
+});
+
+// Browser Profile Management IPC Handlers
+ipcMain.handle('create-browser-profile', async (event, name, hardwareProfile, blockWebRTC) => {
+  try {
+    return await browserProfileManager.createProfile(name, hardwareProfile, blockWebRTC);
+  } catch (error) {
+    console.error('Failed to create browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('load-browser-profile', async (event, id) => {
+  try {
+    return await browserProfileManager.loadProfile(id);
+  } catch (error) {
+    console.error('Failed to load browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('update-browser-profile', async (event, id, profile) => {
+  try {
+    // Update the profile's hardware and location
+    const existingProfile = await browserProfileManager.loadProfile(id);
+    if (existingProfile) {
+      existingProfile.hardware = profile.hardware || existingProfile.hardware;
+      existingProfile.location = profile.location || existingProfile.location;
+      existingProfile.lastUsed = Date.now();
+
+      // Save the updated profile back to the store
+      const profiles = browserProfileManager.getAllProfiles();
+      profiles[id] = existingProfile;
+      browserProfileManager.store.set('profiles', profiles);
+
+      // Also update the hardware profile manager
+      if (profile.hardware) {
+        hardwareProfileManager.setCurrentProfile(profile);
+      }
+
+      return existingProfile;
+    }
+    throw new Error('Profile not found');
+  } catch (error) {
+    console.error('Failed to update browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-all-browser-profiles', async () => {
+  try {
+    return browserProfileManager.getAllProfiles();
+  } catch (error) {
+    console.error('Failed to get all browser profiles:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-current-browser-profile', async () => {
+  try {
+    return browserProfileManager.getCurrentProfile();
+  } catch (error) {
+    console.error('Failed to get current browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('delete-browser-profile', async (event, id) => {
+  try {
+    await browserProfileManager.deleteProfile(id);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to delete browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-browser-profile-stats', async (event, id) => {
+  try {
+    return await browserProfileManager.getProfileStats(id);
+  } catch (error) {
+    console.error('Failed to get browser profile stats:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('export-browser-profile', async (event, id) => {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Browser Profile',
+      defaultPath: `profile-export-${id}`,
+      properties: ['createDirectory']
+    });
+
+    if (!result.canceled && result.filePath) {
+      const exportPath = await browserProfileManager.exportProfile(id, path.dirname(result.filePath));
+      return { success: true, path: exportPath };
+    }
+    return { success: false };
+  } catch (error) {
+    console.error('Failed to export browser profile:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('import-browser-profile', async () => {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Browser Profile',
+      properties: ['openDirectory']
+    });
+
+    if (!result.canceled && result.filePaths[0]) {
+      const profile = await browserProfileManager.importProfile(result.filePaths[0]);
+      return { success: true, profileId: profile.id };
+    }
+    return { success: false };
+  } catch (error) {
+    console.error('Failed to import browser profile:', error);
+    throw error;
   }
 });
 

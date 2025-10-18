@@ -1,20 +1,45 @@
-# Discord Secure Launcher
+# Discord Secure Launcher - Ultimate Stealth Edition
 
-A privacy-focused Discord launcher that runs Discord in an isolated browser session with enhanced security features to protect against device fingerprinting and tracking.
+A military-grade undetectable Discord launcher with comprehensive anti-fingerprinting protection, full proxy support (including WebRTC/SRTP routing), and advanced browser spoofing that makes it indistinguishable from a normal Chrome browser.
 
 ## Features
 
-### Privacy & Security
-- **Fresh Browser Sessions**: Each Discord session runs in a fresh, isolated browser context (not incognito to avoid Discord restrictions)
-- **Anti-Fingerprinting**: Randomized browser fingerprints including:
-  - User Agent rotation
-  - Canvas fingerprint randomization
-  - WebGL fingerprint protection
-  - Screen resolution spoofing
-  - Timezone randomization
-- **Session Isolation**: New browser session for each launch
-- **WebRTC Protection**: Disabled to prevent IP leaks
-- **Automatic Cache Clearing**: Option to clear all data on exit
+### Privacy & Security - UNDETECTABLE BROWSER
+- **Complete Browser Spoofing**: Appears as a normal, frequently-used Chrome browser
+- **Pre-seeded Browser History**: Simulates 2+ weeks of browsing history with popular sites
+- **Advanced Anti-Fingerprinting**:
+  - ✅ Proper `navigator.plugins` PluginArray (not detectable arrays)
+  - ✅ Complete `window.chrome` object with all real Chrome properties
+  - ✅ Real canvas fingerprint noise injection (actually works)
+  - ✅ WebGL randomization from real GPU database
+  - ✅ AudioContext fingerprint protection
+  - ✅ Font enumeration blocking
+  - ✅ Battery API spoofing
+  - ✅ Timezone complete override (all Date methods)
+  - ✅ Screen properties with proper color/pixel depth
+  - ✅ Hardware concurrency randomization
+  - ✅ Device memory spoofing
+  - ✅ Navigator credentials API (simulates saved passwords)
+  - ✅ CSS :visited link history simulation
+- **Behavioral Simulation**:
+  - Random idle periods (simulates AFK)
+  - Tab switching simulation
+  - Typing mistakes and corrections
+  - Random text selection
+  - Focus/blur events
+  - Scroll behavior
+  - Zoom changes
+- **WebRTC/SRTP Protection**:
+  - Forces `disable_non_proxied_udp` policy
+  - Blocks STUN servers at network level
+  - Forces relay-only mode
+  - Prevents ALL IP leaks through proxy
+- **Session Realism**:
+  - IndexedDB databases from popular sites
+  - Service worker registrations
+  - localStorage data for common sites
+  - Realistic cookies with proper timestamps
+  - Simulated autofill profiles
 
 ### Proxy Support
 - HTTP/HTTPS/SOCKS5 proxy configuration

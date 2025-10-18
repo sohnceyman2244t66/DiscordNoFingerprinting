@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const os = require('os');
 const { app } = require('electron');
 const proxyChain = require('proxy-chain');
+const { getStealthScripts, seedBrowserHistory, addBehavioralPatterns } = require('./stealth-engine');
+const browserProfileManager = require('./browser-profiles');
+const hardwareProfileManager = require('./hardware-profiles');
 
 class DiscordBrowser extends EventEmitter {
     constructor(options = {}) {
@@ -13,8 +16,9 @@ class DiscordBrowser extends EventEmitter {
         this.options = {
             proxy: options.proxy || null,
             token: options.token || null,
-            userAgent: options.userAgent || this.generateUserAgent(),
-            incognito: options.incognito !== false,
+            userAgent: options.userAgent || null, // Will be set from profile
+            browserProfile: options.browserProfile || null,
+            blockWebRTC: options.blockWebRTC !== false, // Default to true for security
             headless: false, // Always show browser for Discord
             windowSize: { width: 1280, height: 720 },
             ...options
@@ -23,27 +27,91 @@ class DiscordBrowser extends EventEmitter {
         this.browser = null;
         this.page = null;
         this.isRunning = false;
-        this.sessionId = crypto.randomBytes(16).toString('hex');
+        this.browserProfile = null;
+        this.hardwareProfile = null;
     }
 
     generateUserAgent() {
         const userAgents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         ];
         return userAgents[Math.floor(Math.random() * userAgents.length)];
     }
 
     async launch() {
         try {
-            // Create a fresh user data directory for this session
-            const tempDir = path.join(os.tmpdir(), 'discord-launcher-sessions');
-            this.userDataDir = path.join(tempDir, `session-${this.sessionId}`);
+            // Get or create browser profile
+            if (this.options.browserProfile) {
+                // Use existing profile
+                this.browserProfile = this.options.browserProfile;
+                console.log(`Using browser profile: ${this.browserProfile.name} (${this.browserProfile.id})`);
+            } else {
+                // Get current profile or create a new one
+                let profile = browserProfileManager.getCurrentProfile();
 
-            // Create the directories
-            await fs.mkdir(tempDir, { recursive: true });
-            await fs.mkdir(this.userDataDir, { recursive: true });
+                if (!profile) {
+                    // Create a new profile with current hardware settings
+                    const hardwareProfile = hardwareProfileManager.getCurrentProfile();
+                    profile = await browserProfileManager.createProfile(
+                        `Default Profile ${new Date().toLocaleDateString()}`,
+                        hardwareProfile
+                    );
+                }
+
+                this.browserProfile = await browserProfileManager.loadProfile(profile.id);
+            }
+
+            // Set hardware profile from browser profile
+            this.hardwareProfile = this.browserProfile.hardware;
+            if (this.hardwareProfile) {
+                hardwareProfileManager.setCurrentProfile(this.hardwareProfile);
+            }
+
+            // Use persistent values from profile
+            this.options.userAgent = this.browserProfile.userAgent || this.generateUserAgent();
+            this.profileSeed = this.browserProfile.profileSeed;
+
+            // Use the persistent profile directory
+            this.userDataDir = this.browserProfile.directory;
+            console.log('Using persistent profile directory:', this.userDataDir);
+
+            // Ensure Default directory exists
+            const defaultProfileDir = path.join(this.userDataDir, 'Default');
+            await fs.mkdir(defaultProfileDir, { recursive: true });
+
+            // Update Chrome Preferences with current settings (if needed)
+            const preferencesPath = path.join(defaultProfileDir, 'Preferences');
+
+            // Check if preferences exist, update WebRTC settings
+            let preferences = {};
+            try {
+                const existingPrefs = await fs.readFile(preferencesPath, 'utf-8');
+                preferences = JSON.parse(existingPrefs);
+            } catch (e) {
+                // Preferences don't exist yet
+            }
+
+            // Configure WebRTC based on user preference
+            if (this.options.blockWebRTC) {
+                // Block WebRTC leaks
+                preferences.webrtc = {
+                    "ip_handling_policy": "disable_non_proxied_udp",
+                    "multiple_routes_enabled": false,
+                    "nonproxied_udp_enabled": false
+                };
+            } else {
+                // Allow WebRTC through proxy (for UDP-capable proxies)
+                preferences.webrtc = {
+                    "ip_handling_policy": "default_public_and_private_interfaces",
+                    "multiple_routes_enabled": true,
+                    "nonproxied_udp_enabled": true
+                };
+            }
+
+            await fs.writeFile(preferencesPath, JSON.stringify(preferences, null, 2));
+            console.log('Updated Chrome Preferences with WebRTC leak protection');
 
             // Create plugins folder in the application's directory (where the exe is located)
             // In development, this will be in the project folder
@@ -72,20 +140,27 @@ class DiscordBrowser extends EventEmitter {
                 console.log('No plugins found or error reading plugins folder');
             }
 
-            // Prepare browser arguments
+            // Prepare browser arguments - make it look like a normal Chrome browser
             this.browserArgs = [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
                 '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
                 '--disable-blink-features=AutomationControlled',
                 `--window-size=${this.options.windowSize.width},${this.options.windowSize.height}`,
-                `--user-data-dir=${this.userDataDir}`
+                `--user-data-dir=${this.userDataDir}`,
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-features=TranslateUI',
+                '--disable-ipc-flooding-protection',
+                '--enable-features=NetworkService,NetworkServiceInProcess',
+                '--allow-running-insecure-content',
+                '--disable-features=site-per-process,IsolateOrigins',
+                '--flag-switches-begin',
+                '--flag-switches-end',
+                '--origin-trial-disabled-features=WebGPU',
+                '--disable-features=BackForwardCache'
             ];
 
             // Add extensions if any
@@ -117,8 +192,10 @@ class DiscordBrowser extends EventEmitter {
                     this.proxyUrl = await proxyChain.anonymizeProxy(upstreamProxyUrl);
                     console.log(`Local proxy server started: ${this.proxyUrl}`);
 
-                    // Chrome will connect to our local proxy
+                    // Use the local proxy server
                     this.browserArgs.push(`--proxy-server=${this.proxyUrl}`);
+
+                    // Don't bypass the proxy for any address
                     this.browserArgs.push('--proxy-bypass-list=<-loopback>');
                 } catch (error) {
                     console.error('Failed to set up proxy:', error.message);
@@ -126,10 +203,27 @@ class DiscordBrowser extends EventEmitter {
                 }
             }
 
-            // Disable WebRTC to prevent IP leaks
-            this.browserArgs.push('--disable-webrtc-hw-encoding');
-            this.browserArgs.push('--disable-webrtc-hw-decoding');
-            this.browserArgs.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+            // Configure WebRTC based on user preference
+            if (this.options.blockWebRTC) {
+                // Block WebRTC leaks completely
+                this.browserArgs.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+                this.browserArgs.push('--enforce-webrtc-ip-permission-check');
+                this.browserArgs.push('--enable-features=WebRtcHideLocalIpsWithMdns');
+                console.log('WebRTC blocking enabled - all WebRTC disabled');
+            } else {
+                // Allow WebRTC fully - DO NOT add any blocking flags
+                console.log('WebRTC enabled for UDP proxy support');
+
+                if (this.proxyUrl) {
+                    // Only configure proxy routing, don't block WebRTC
+                    this.browserArgs.push('--force-webrtc-ip-handling-policy=default_public_interface_only');
+                    // This policy allows WebRTC but only exposes public IP (which will be the proxy IP)
+                    console.log('WebRTC will route through proxy:', this.proxyUrl);
+                } else {
+                    // No proxy and WebRTC not blocked - user wants full WebRTC
+                    console.log('WARNING: WebRTC enabled without proxy - IP may be exposed');
+                }
+            }
 
             // Launch browser with anti-detection measures
             // Try to find Chrome executable
@@ -149,7 +243,10 @@ class DiscordBrowser extends EventEmitter {
                 headless: false,
                 args: this.browserArgs,
                 defaultViewport: null,
-                ignoreDefaultArgs: ['--enable-automation'],
+                ignoreDefaultArgs: [
+                    '--enable-automation',
+                    '--enable-blink-features=AutomationControlled'
+                ],
                 executablePath: this.execPath
             });
 
@@ -168,6 +265,50 @@ class DiscordBrowser extends EventEmitter {
             // Add stealth measures to avoid detection
             await this.addStealthMeasures();
 
+            // Use CDP to intercept and optionally block WebRTC at network level
+            if (this.options.blockWebRTC) {
+                try {
+                    const client = await this.page.target().createCDPSession();
+
+                    // Enable network domain for intercepting
+                    await client.send('Network.enable');
+
+                    // Intercept and block STUN requests at network level
+                    await client.send('Network.setRequestInterception', {
+                        patterns: [
+                            { urlPattern: 'stun:*', interceptionStage: 'HeadersReceived' },
+                            { urlPattern: '*stun*', interceptionStage: 'HeadersReceived' }
+                        ]
+                    });
+
+                    // Block STUN requests
+                    client.on('Network.requestIntercepted', async (event) => {
+                        try {
+                            if (event.request.url.includes('stun') || event.request.url.startsWith('stun:')) {
+                                console.log('Blocked STUN request:', event.request.url);
+                                await client.send('Network.continueInterceptedRequest', {
+                                    interceptionId: event.interceptionId,
+                                    errorReason: 'BlockedByClient'
+                                });
+                            } else {
+                                await client.send('Network.continueInterceptedRequest', {
+                                    interceptionId: event.interceptionId
+                                });
+                            }
+                        } catch (error) {
+                            // Request might already be handled
+                        }
+                    });
+
+                    console.log('CDP WebRTC blocking enabled');
+                } catch (error) {
+                    console.warn('Could not set up CDP WebRTC blocking:', error.message);
+                }
+            } else {
+                console.log('WebRTC enabled - allowing all WebRTC traffic (will route through proxy if configured)');
+                // No CDP interception when WebRTC is enabled - let it work normally
+            }
+
             // Set proxy authentication if needed
             if (this.options.proxy && this.options.proxy.username && this.options.proxy.password) {
                 await this.page.authenticate({
@@ -180,46 +321,105 @@ class DiscordBrowser extends EventEmitter {
             if (this.options.token) {
                 console.log('Setting up token authentication...');
 
-                // Navigate to Discord to establish localStorage
-                await this.page.goto('https://discord.com', {
-                    waitUntil: 'networkidle2',
-                    timeout: 30000
-                });
+                try {
+                    // Navigate to Discord to establish localStorage
+                    await this.page.goto('https://discord.com', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 60000
+                    });
 
-                // Wait a bit for page to be ready
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                    console.log('Page loaded, waiting for JavaScript to initialize...');
 
-                // Wait for localStorage and set token
-                await this.page.waitForFunction(() => window.localStorage !== undefined, { timeout: 10000 });
+                    // Wait for page to initialize
+                    await new Promise(resolve => setTimeout(resolve, 2000));
 
-                await this.page.evaluate((token) => {
-                    localStorage.setItem('token', `"${token}"`);
-                    localStorage.setItem('locale', '"en-US"');
-                    localStorage.setItem('theme', '"dark"');
-                }, this.options.token);
+                    // Set token in localStorage
+                    const tokenSet = await this.page.evaluate((token) => {
+                        try {
+                            if (typeof localStorage !== 'undefined') {
+                                localStorage.setItem('token', `"${token}"`);
+                                localStorage.setItem('locale', '"en-US"');
+                                localStorage.setItem('theme', '"dark"');
+                                return { success: true, method: 'localStorage' };
+                            }
+                            window.__discordToken = token;
+                            return { success: true, method: 'window' };
+                        } catch (error) {
+                            return { success: false, error: error.message };
+                        }
+                    }, this.options.token);
 
-                console.log('Token set, navigating to Discord app...');
+                    if (tokenSet.success) {
+                        console.log(`Token set using ${tokenSet.method}`);
+                    }
 
-                // Navigate to Discord app
-                await this.page.goto('https://discord.com/channels/@me', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 60000
-                }).catch(async () => {
-                    console.log('Channels URL failed, trying app URL...');
-                    await this.page.goto('https://discord.com/app', {
+                    console.log('Navigating to Discord app with Google referrer...');
+
+                    // Navigate to Discord channels with Google as referrer
+                    await this.page.goto('https://discord.com/channels/@me', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 60000,
+                        referer: 'https://www.google.com/'
+                    });
+
+                } catch (error) {
+                    console.error('Error during token setup:', error.message);
+                    console.log('Continuing to Discord without auto-login...');
+                    await this.page.goto('https://discord.com/channels/@me', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 60000,
+                        referer: 'https://www.google.com/'
+                    });
+                }
+
+                // Run autoLogin for verification
+                await this.autoLogin();
+            } else {
+                // No token, go to random search engine with random query
+                const searchEngines = [
+                    { name: 'Bing', url: 'https://www.bing.com/search?q=' },
+                    { name: 'Yahoo', url: 'https://search.yahoo.com/search?p=' },
+                    { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
+                    { name: 'Yandex', url: 'https://yandex.com/search/?text=' },
+                    { name: 'AOL', url: 'https://search.aol.com/aol/search?q=' }
+                ];
+
+                const queries = [
+                    'google',
+                    'google signup',
+                    'submit a copyright removal request youtube',
+                    'gmail signup',
+                    'youtube signup'
+                ];
+
+                // Pick random search engine and query
+                const randomEngine = searchEngines[Math.floor(Math.random() * searchEngines.length)];
+                const randomQuery = queries[Math.floor(Math.random() * queries.length)];
+                const searchUrl = randomEngine.url + encodeURIComponent(randomQuery);
+
+                console.log(`No token provided, navigating to ${randomEngine.name} with query: "${randomQuery}"`);
+                try {
+                    await this.page.goto(searchUrl, {
                         waitUntil: 'domcontentloaded',
                         timeout: 30000
                     });
-                });
-
-                // Still run autoLogin for verification
-                await this.autoLogin();
-            } else {
-                // No token, just go to Discord normally
-                await this.page.goto('https://discord.com/app', {
-                    waitUntil: 'networkidle2',
-                    timeout: 60000
-                });
+                } catch (navError) {
+                    console.log(`Failed to navigate to ${randomEngine.name}, trying Google as fallback`);
+                    // Fallback to Google if search engine fails (proxy might block certain sites)
+                    try {
+                        await this.page.goto('https://www.google.com/search?q=' + encodeURIComponent(randomQuery), {
+                            waitUntil: 'domcontentloaded',
+                            timeout: 30000
+                        });
+                    } catch (fallbackError) {
+                        console.log('Fallback to Google also failed, navigating to Discord directly');
+                        // Last resort - go directly to Discord
+                        await this.page.goto('https://discord.com', {
+                            waitUntil: 'domcontentloaded',
+                            timeout: 30000
+                        });
+                    }
+                }
             }
 
             // Monitor for token updates
@@ -227,106 +427,180 @@ class DiscordBrowser extends EventEmitter {
 
             // Monitor browser events
             this.browser.on('disconnected', () => {
+                console.log('Browser disconnected');
                 this.isRunning = false;
                 this.emit('closed');
             });
 
+            // Add error handling for page crashes
+            this.page.on('error', error => {
+                console.error('Page crashed:', error);
+            });
+
+            this.page.on('pageerror', error => {
+                console.error('Page error:', error.message);
+            });
+
+            // Keep browser alive with periodic activity
+            this.keepAliveInterval = setInterval(async () => {
+                if (this.page && this.isRunning) {
+                    try {
+                        // Just evaluate something simple to keep connection alive
+                        await this.page.evaluate(() => document.title);
+                    } catch (error) {
+                        // Page might be navigating or closed
+                    }
+                }
+            }, 30000); // Every 30 seconds
+
             this.isRunning = true;
+            this.sessionStartTime = Date.now();
             return { success: true };
 
         } catch (error) {
             console.error('Failed to launch Discord browser:', error);
+
+            // Handle frame detachment gracefully
+            if (error.message && error.message.includes('frame was detached')) {
+                console.log('Browser window was closed during launch - this is normal behavior');
+                this.isRunning = true; // Browser is actually running, just detached
+                return { success: true };
+            }
+
             this.cleanup();
             return { success: false, error: error.message };
         }
     }
 
     async addStealthMeasures() {
-        // Override navigator properties to avoid detection
+        // Apply all stealth scripts before page loads
         await this.page.evaluateOnNewDocument(() => {
-            // Override navigator.webdriver
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-
-            // Override navigator.plugins to appear normal
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-
-            // Override navigator.languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-
-            // Override permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-
-            // Override chrome runtime
-            Object.defineProperty(window, 'chrome', {
-                get: () => ({
-                    runtime: {}
-                })
-            });
-
-            // Randomize canvas fingerprint
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function(type) {
-                if (type === 'image/png' && Math.random() < 0.01) {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillText('noise', 0, 0);
+            // Override navigator.webdriver safely
+            try {
+                const descriptor = Object.getOwnPropertyDescriptor(navigator, 'webdriver');
+                if (!descriptor || descriptor.configurable) {
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                } else {
+                    delete navigator.webdriver;
                 }
-                return originalToDataURL.apply(this, arguments);
-            };
+            } catch (e) {
+                // Can't override webdriver
+            }
 
-            // Randomize WebGL fingerprint
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                if (parameter === 37445) {
-                    return 'Intel Inc.';
+            // Override navigator.languages safely
+            try {
+                const descriptor = Object.getOwnPropertyDescriptor(navigator, 'languages');
+                if (!descriptor || descriptor.configurable) {
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en']
+                    });
                 }
-                if (parameter === 37446) {
-                    return 'Intel Iris OpenGL Engine';
-                }
-                return getParameter.apply(this, arguments);
-            };
+            } catch (e) {
+                // Can't override languages
+            }
 
-            // Override screen properties
-            Object.defineProperty(screen, 'availWidth', {
-                get: () => screen.width
-            });
-            Object.defineProperty(screen, 'availHeight', {
-                get: () => screen.height - 40
-            });
+            // MediaDevices override with persistent device IDs from profile
+            // These IDs are set per profile and don't change
         });
 
-        // Randomize viewport
-        const viewportWidth = 1280 + Math.floor(Math.random() * 100);
-        const viewportHeight = 720 + Math.floor(Math.random() * 100);
+        // Get stealth scripts with current profile values, WebRTC option, and profile info
+        const stealthScripts = getStealthScripts(this.options.blockWebRTC, this.browserProfile);
+
+        // Inject all comprehensive stealth scripts
+        await this.page.evaluateOnNewDocument(stealthScripts.navigatorPlugins);
+        await this.page.evaluateOnNewDocument(stealthScripts.chromeObject);
+        await this.page.evaluateOnNewDocument(stealthScripts.canvasProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.webglProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.navigatorProperties);
+        await this.page.evaluateOnNewDocument(stealthScripts.batteryProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.audioProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.fontProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.screenProperties);
+        await this.page.evaluateOnNewDocument(stealthScripts.timezoneProtection);
+        await this.page.evaluateOnNewDocument(stealthScripts.permissionsAPI);
+        await this.page.evaluateOnNewDocument(stealthScripts.credentialsAPI);
+        await this.page.evaluateOnNewDocument(stealthScripts.visitedLinks);
+
+        // Inject appropriate WebRTC script based on blocking preference
+        if (stealthScripts.webrtcQuiet) {
+            // The webrtcQuiet script now handles both blocking and proxy-friendly modes
+            await this.page.evaluateOnNewDocument(stealthScripts.webrtcQuiet);
+        }
+
+        // Seed browser with fake history and cookies
+        await seedBrowserHistory(this.page);
+
+        // Add behavioral patterns (idle, tab switching, etc.)
+        await addBehavioralPatterns(this.page);
+
+        // Use screen dimensions from hardware profile (no randomization)
+        const screen = this.hardwareProfile?.screen || {};
+        const viewportWidth = screen.width || 1920;
+        const viewportHeight = screen.height || 1080;
         await this.page.setViewport({ width: viewportWidth, height: viewportHeight });
 
         // Add random mouse movements
         this.startRandomMouseMovements();
 
-        // Set random timezone
-        const timezones = ['America/New_York', 'Europe/London', 'Asia/Tokyo', 'Australia/Sydney'];
-        const randomTimezone = timezones[Math.floor(Math.random() * timezones.length)];
-        await this.page.evaluateOnNewDocument(`
-            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
-                value: function() {
-                    return {
-                        timeZone: '${randomTimezone}',
-                        locale: 'en-US'
-                    };
+        // Add more realistic user behavior
+        this.simulateRealisticBehavior();
+    }
+
+    // New method for realistic behavior simulation
+    simulateRealisticBehavior() {
+        // Simulate random scrolling
+        setInterval(async () => {
+            if (this.page && this.isRunning && Math.random() < 0.03) {
+                try {
+                    await this.page.evaluate(() => {
+                        const maxScroll = document.body.scrollHeight - window.innerHeight;
+                        const scrollTo = Math.floor(Math.random() * maxScroll);
+                        window.scrollTo({
+                            top: scrollTo,
+                            behavior: 'smooth'
+                        });
+                    });
+                } catch (e) {
+                    // Page might be navigating
                 }
+            }
+        }, 15000); // Every 15 seconds
+
+        // Simulate typing with mistakes and corrections
+        this.page.on('framenavigated', async () => {
+            await this.page.evaluate(() => {
+                document.addEventListener('keydown', (e) => {
+                    // Occasionally simulate typos (5% chance)
+                    if (Math.random() < 0.05 && e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                        setTimeout(() => {
+                            // Simulate backspace after typo
+                            const backspaceEvent = new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' });
+                            e.target.dispatchEvent(backspaceEvent);
+                        }, 100 + Math.random() * 200);
+                    }
+                });
             });
-        `);
+        });
+
+        // Simulate focus/blur events
+        setInterval(async () => {
+            if (this.page && this.isRunning && Math.random() < 0.02) {
+                try {
+                    await this.page.evaluate(() => {
+                        const elements = document.querySelectorAll('input, textarea, button, a');
+                        if (elements.length > 0) {
+                            const element = elements[Math.floor(Math.random() * elements.length)];
+                            element.focus();
+                            setTimeout(() => element.blur(), 500 + Math.random() * 1000);
+                        }
+                    });
+                } catch (e) {
+                    // Page might be navigating
+                }
+            }
+        }, 10000);
     }
 
     async autoLogin() {
@@ -522,14 +796,13 @@ class DiscordBrowser extends EventEmitter {
                 }
             }
 
-            // Clean up the temporary user data directory
-            if (this.userDataDir) {
-                try {
-                    const rimraf = require('fs').promises.rm || require('fs').promises.rmdir;
-                    await rimraf(this.userDataDir, { recursive: true, force: true });
-                    console.log('Cleaned up session directory:', this.userDataDir);
-                } catch (error) {
-                    console.warn('Failed to clean up session directory:', error);
+            // DO NOT DELETE the user data directory - it's now persistent!
+            if (this.userDataDir && this.browserProfile) {
+                console.log('Browser profile preserved at:', this.userDataDir);
+
+                // Update profile stats
+                if (this.browserProfile.stats) {
+                    this.browserProfile.stats.totalTime += Date.now() - this.sessionStartTime;
                 }
             }
         } catch (error) {

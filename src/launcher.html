@@ -13,234 +13,249 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #0a0a0a;
             color: #ffffff;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
             padding: 20px;
+            min-height: 100vh;
+            overflow-y: auto;
         }
 
         .container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            width: 100%;
-            max-width: 450px;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            max-width: 750px;
+            margin: 0 auto;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .shield-icon {
-            width: 32px;
-            height: 32px;
-            fill: #4ade80;
-        }
-
-        .status {
-            font-size: 14px;
-            color: #a8d8ea;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #4ade80;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
-            }
-            70% {
-                box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
-            }
-        }
-
-        .section {
+            padding: 20px 0;
+            border-bottom: 1px solid #333;
             margin-bottom: 25px;
         }
 
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .section {
+            background: #111111;
+            border: 1px solid #333;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
         .section-title {
-            font-size: 16px;
-            margin-bottom: 10px;
-            color: #e2e8f0;
-            font-weight: 500;
+            font-weight: bold;
+            font-size: 14px;
+            color: #ffffff;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .input-group {
             margin-bottom: 15px;
         }
 
-        label {
+        .input-group label {
             display: block;
             margin-bottom: 5px;
-            font-size: 14px;
-            color: #cbd5e0;
+            color: #ccc;
+            font-size: 12px;
+            font-weight: 500;
         }
 
-        input[type="text"],
-        input[type="password"],
-        input[type="number"],
-        select {
+        .input-group input[type="text"],
+        .input-group input[type="password"],
+        .input-group input[type="number"],
+        .input-group select,
+        .input-group textarea {
             width: 100%;
-            padding: 10px 15px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 10px;
+            background: #0a0a0a;
+            border: 1px solid #444;
             color: #ffffff;
-            font-size: 14px;
-            transition: all 0.3s ease;
-        }
-
-        input[type="text"]:focus,
-        input[type="password"]:focus,
-        input[type="number"]:focus,
-        select:focus {
+            font-size: 13px;
+            font-family: inherit;
             outline: none;
-            border-color: #4ade80;
-            background: rgba(255, 255, 255, 0.15);
+            transition: border-color 0.2s;
         }
 
-        input::placeholder {
-            color: rgba(255, 255, 255, 0.5);
+        .input-group input:focus,
+        .input-group select:focus,
+        .input-group textarea:focus {
+            border-color: #666;
+        }
+
+        .input-group textarea {
+            min-height: 60px;
+            resize: vertical;
         }
 
         .checkbox-group {
             display: flex;
             align-items: center;
-            gap: 10px;
             margin-bottom: 10px;
         }
 
-        input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
+        .checkbox-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
             cursor: pointer;
         }
 
         .checkbox-group label {
-            margin-bottom: 0;
+            color: #ccc;
+            font-size: 13px;
             cursor: pointer;
+            user-select: none;
+        }
+
+        .button {
+            background: #1a1a1a;
+            color: #ffffff;
+            border: 1px solid #444;
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            width: 100%;
+        }
+
+        .button:hover {
+            background: #222;
+            border-color: #666;
+        }
+
+        .button:active {
+            background: #0a0a0a;
+        }
+
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .button-primary {
+            background: #2a2a2a;
+            border-color: #666;
+        }
+
+        .button-primary:hover {
+            background: #333;
+            border-color: #888;
+        }
+
+        .button-success {
+            background: #0f3a1f;
+            border-color: #164;
+        }
+
+        .button-success:hover {
+            background: #164a2f;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
         }
 
         .proxy-fields {
             display: none;
-            margin-top: 10px;
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
+            margin-top: 15px;
         }
 
         .proxy-fields.active {
             display: block;
         }
 
-        .button-group {
+        .hardware-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 15px;
+        }
+
+        .hardware-row .input-group {
+            margin-bottom: 0;
+        }
+
+        .btn-random {
+            background: #1a1a1a;
+            color: white;
+            border: 1px solid #444;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            white-space: nowrap;
+            height: 35px;
+        }
+
+        .btn-random:hover {
+            background: #222;
+            border-color: #666;
+        }
+
+        .status-message {
+            display: none;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            border: 1px solid;
+        }
+
+        .status-message.active {
+            display: block;
+        }
+
+        .status-message.error {
+            background: rgba(220, 53, 69, 0.1);
+            border-color: #dc3545;
+            color: #ff6b7d;
+        }
+
+        .status-message.success {
+            background: rgba(40, 167, 69, 0.1);
+            border-color: #28a745;
+            color: #5dd879;
+        }
+
+        .status-message.info {
+            background: rgba(23, 162, 184, 0.1);
+            border-color: #17a2b8;
+            color: #5dd4f4;
+        }
+
+        .profile-selector {
             display: flex;
             gap: 10px;
-            margin-top: 30px;
+            margin-bottom: 15px;
         }
 
-        button {
+        .profile-selector select {
             flex: 1;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
-        .btn-launch {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-            color: #ffffff;
-        }
-
-        .btn-launch:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(74, 222, 128, 0.4);
-        }
-
-        .btn-launch:disabled {
-            background: #64748b;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-settings {
-            background: rgba(255, 255, 255, 0.2);
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-        }
-
-        .btn-settings:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .footer {
+        .divider {
+            margin: 15px 0;
             text-align: center;
-            margin-top: 20px;
+            color: #666;
             font-size: 12px;
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .error-message {
-            display: none;
-            padding: 10px;
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid #ef4444;
-            border-radius: 8px;
-            color: #fca5a5;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-
-        .error-message.active {
-            display: block;
-        }
-
-        .success-message {
-            display: none;
-            padding: 10px;
-            background: rgba(34, 197, 94, 0.2);
-            border: 1px solid #22c55e;
-            border-radius: 8px;
-            color: #86efac;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-
-        .success-message.active {
-            display: block;
         }
 
         .loading {
@@ -254,50 +269,201 @@
         }
 
         .spinner {
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-top: 3px solid #4ade80;
+            border: 3px solid #222;
+            border-top: 3px solid #666;
             border-radius: 50%;
             width: 40px;
             height: 40px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
+            margin: 0 auto;
         }
 
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        code {
+            background: #1a1a1a;
+            padding: 2px 5px;
+            color: #888;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+        }
+
+        .info-text {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .success-message {
+            display: none;
+            padding: 10px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid #22c55e;
+            color: #86efac;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .success-message.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>
-                <svg class="shield-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L4 7V13C4 17.55 7.84 21.74 12 23C16.16 21.74 20 17.55 20 13V7L12 2M12 11.5C12.83 11.5 13.5 10.83 13.5 10C13.5 9.17 12.83 8.5 12 8.5C11.17 8.5 10.5 9.17 10.5 10C10.5 10.83 11.17 11.5 12 11.5M12 4.8L17.65 8V13C17.65 16.05 15.77 18.98 12 19.95C8.23 18.98 6.35 16.05 6.35 13V8L12 4.8Z"/>
-                </svg>
-                Discord Secure
-            </h1>
-            <div class="status">
-                <span class="status-dot"></span>
-                Protected Mode Active
-            </div>
+            <h1>Discord Secure Launcher</h1>
+            <div class="subtitle">Advanced Anti-Detection Browser</div>
         </div>
 
-        <div class="error-message" id="errorMessage"></div>
+        <div class="status-message" id="statusMessage"></div>
         <div class="success-message" id="successMessage"></div>
 
         <div class="section">
-            <div class="section-title">Authentication</div>
+            <div class="section-title">Discord Token</div>
             <div class="input-group">
-                <label for="token">Discord Token (Optional)</label>
-                <input type="password" id="token" placeholder="Leave empty to login manually">
-                <button class="btn-check" id="checkTokenBtn" style="margin-top: 10px; width: 100%; background: #5865F2;">Check Token</button>
-                <div id="tokenStatus" style="margin-top: 10px; padding: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; display: none;">
-                    <div style="font-size: 14px; color: #a8d8ea;">
-                        <span id="tokenStatusText"></span>
-                    </div>
+                <label for="token">Token (Optional)</label>
+                <textarea id="token" placeholder="Enter your Discord token for auto-login (leave empty to browse manually)"></textarea>
+            </div>
+            <button class="button" id="checkTokenBtn">Verify Token</button>
+            <div id="tokenStatus" style="margin-top: 10px; display: none;">
+                <span id="tokenStatusText"></span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Hardware Configuration</div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="userAgentSelect">User Agent</label>
+                    <select id="userAgentSelect">
+                        <option value="chrome120">Chrome 120 - Windows 10</option>
+                        <option value="chrome121">Chrome 121 - Windows 10</option>
+                        <option value="chrome122">Chrome 122 - Windows 10</option>
+                        <option value="firefox121">Firefox 121 - Windows 10</option>
+                        <option value="edge120">Edge 120 - Windows 10</option>
+                    </select>
                 </div>
+                <button class="btn-random" onclick="randomizeUserAgent()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="cpuModel">CPU Model</label>
+                    <input type="text" id="cpuModel" placeholder="Intel Core i7-10700K">
+                </div>
+                <button class="btn-random" onclick="randomizeCPU()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="cpuCores">CPU Cores</label>
+                    <input type="number" id="cpuCores" min="2" max="32" value="8">
+                </div>
+                <button class="btn-random" onclick="randomizeCores()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="gpuModel">GPU Model</label>
+                    <input type="text" id="gpuModel" placeholder="NVIDIA GeForce RTX 3060">
+                </div>
+                <button class="btn-random" onclick="randomizeGPU()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="ramSize">RAM (GB)</label>
+                    <select id="ramSize">
+                        <option value="4">4 GB</option>
+                        <option value="8">8 GB</option>
+                        <option value="16" selected>16 GB</option>
+                        <option value="32">32 GB</option>
+                        <option value="64">64 GB</option>
+                    </select>
+                </div>
+                <button class="btn-random" onclick="randomizeRAM()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="screenRes">Screen Resolution</label>
+                    <select id="screenRes">
+                        <option value="1920x1080" selected>1920x1080 (Full HD)</option>
+                        <option value="2560x1440">2560x1440 (2K)</option>
+                        <option value="3840x2160">3840x2160 (4K)</option>
+                        <option value="1366x768">1366x768</option>
+                        <option value="1600x900">1600x900</option>
+                    </select>
+                </div>
+                <button class="btn-random" onclick="randomizeScreen()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="timezone">Timezone</label>
+                    <select id="timezone">
+                        <option value="America/New_York">America/New York</option>
+                        <option value="America/Chicago">America/Chicago</option>
+                        <option value="America/Los_Angeles">America/Los Angeles</option>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Europe/Berlin">Europe/Berlin</option>
+                        <option value="Asia/Tokyo">Asia/Tokyo</option>
+                    </select>
+                </div>
+                <button class="btn-random" onclick="randomizeTimezone()">Random</button>
+            </div>
+
+            <div class="hardware-row">
+                <div class="input-group">
+                    <label for="language">Language</label>
+                    <select id="language">
+                        <option value="en-US">English (US)</option>
+                        <option value="en-GB">English (UK)</option>
+                        <option value="de-DE">German</option>
+                        <option value="fr-FR">French</option>
+                        <option value="es-ES">Spanish</option>
+                        <option value="ja-JP">Japanese</option>
+                    </select>
+                </div>
+                <button class="btn-random" onclick="randomizeLanguage()">Random</button>
+            </div>
+
+            <button class="button" onclick="updateHardwareProfile()" style="margin-top: 10px;">Save Hardware Profile</button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Browser Profile</div>
+            <div class="profile-selector">
+                <select id="profileSelect" style="display:none;"></select>
+                <select id="browserProfileSelect">
+                    <option value="">Default Profile</option>
+                </select>
+                <button class="button" id="newProfileBtn">New Profile</button>
+                <button class="button" id="deleteProfileBtn">Delete</button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button class="button" id="exportProfileBtn">Export</button>
+                <button class="button" id="importProfileBtn">Import</button>
+            </div>
+            <div id="currentProfileInfo" style="display:none;">
+                <div id="currentProfileName"></div>
+                <div id="profileCreated"></div>
+                <div id="profileCpu"></div>
+                <div id="profileRam"></div>
+                <div id="profileGpu"></div>
+                <div id="profileScreen"></div>
+                <div id="profileOS"></div>
+                <div id="profileLocation"></div>
+                <div id="profileLanguage"></div>
+            </div>
+            <template id="profileTemplate"></template>
+            <div class="info-text">
+                Each browser profile maintains its own cookies, passwords, extensions, and history
             </div>
         </div>
 
@@ -310,11 +476,22 @@
 
             <div class="proxy-fields" id="proxyFields">
                 <div class="input-group">
+                    <label for="proxyString">Proxy String (Quick Input)</label>
+                    <input type="text" id="proxyString" placeholder="host:port:username:password or host:port"
+                           style="font-family: monospace; font-size: 12px;">
+                    <div class="info-text">
+                        Format: <code>proxy.soax.com:5000:username:password</code> or just <code>host:port</code>
+                    </div>
+                </div>
+
+                <div class="divider">─── OR enter manually ───</div>
+
+                <div class="input-group">
                     <label for="proxyProtocol">Protocol</label>
                     <select id="proxyProtocol">
                         <option value="http">HTTP</option>
                         <option value="https">HTTPS</option>
-                        <option value="socks5">SOCKS5</option>
+                        <option value="socks5" selected>SOCKS5</option>
                     </select>
                 </div>
 
@@ -354,20 +531,24 @@
                 <input type="checkbox" id="randomUserAgent" checked>
                 <label for="randomUserAgent">Randomize user agent</label>
             </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="blockWebRTC" checked>
+                <label for="blockWebRTC">Block WebRTC IP leaks</label>
+            </div>
+            <div class="info-text" style="margin-left: 25px;">
+                <b>Checked (Recommended):</b> Completely blocks WebRTC to prevent IP leaks<br>
+                <b>Unchecked:</b> Enables WebRTC for voice/video (requires UDP-capable SOCKS5 proxy or your real IP will be exposed)
+            </div>
         </div>
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <div>Launching secure Discord session...</div>
+            <p style="margin-top: 15px; color: #888;">Launching Discord...</p>
         </div>
 
         <div class="button-group">
-            <button class="btn-launch" id="launchBtn">Launch Discord</button>
-            <button class="btn-settings" id="saveBtn">Save Settings</button>
-        </div>
-
-        <div class="footer">
-            Your privacy is protected • New session each launch • Token encrypted locally
+            <button class="button button-primary" id="launchBtn">Launch Discord</button>
+            <button class="button" id="saveSettingsBtn">Save Settings</button>
         </div>
     </div>
 
