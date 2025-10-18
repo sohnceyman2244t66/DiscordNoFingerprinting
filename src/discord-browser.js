@@ -170,8 +170,25 @@ class DiscordBrowser extends EventEmitter {
                 console.log(`Loading ${extensions.length} extension(s)`);
             }
 
+            // Find Chrome executable before using it
+            try {
+                this.execPath = puppeteer.executablePath();
+            } catch (e) {
+                // Fallback to system Chrome if Puppeteer's bundled Chrome fails
+                const possiblePaths = [
+                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+                    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
+                ];
+                this.execPath = possiblePaths.find(p => require('fs').existsSync(p));
+                if (!this.execPath) {
+                    throw new Error('Chrome executable not found. Please install Google Chrome.');
+                }
+            }
+
             // Set up proxy using proxy-chain if configured
             this.proxyUrl = null;
+            let proxyFailed = false;
             if (this.options.proxy && this.options.proxy.host) {
                 // Build the upstream proxy URL
                 let upstreamProxyUrl;
@@ -194,12 +211,15 @@ class DiscordBrowser extends EventEmitter {
 
                     // Use the local proxy server
                     this.browserArgs.push(`--proxy-server=${this.proxyUrl}`);
-
                     // Don't bypass the proxy for any address
                     this.browserArgs.push('--proxy-bypass-list=<-loopback>');
+
+                    console.log('Proxy configured successfully');
                 } catch (error) {
-                    console.error('Failed to set up proxy:', error.message);
-                    throw new Error(`Proxy setup failed: ${error.message}`);
+                    console.error('Failed to set up proxy server:', error.message);
+                    proxyFailed = true;
+                    console.warn('WARNING: Could not create proxy server. Continuing without proxy...');
+                    this.emit('proxy-failed', 'Could not set up proxy server. Launching without proxy.');
                 }
             }
 
@@ -226,18 +246,6 @@ class DiscordBrowser extends EventEmitter {
             }
 
             // Launch browser with anti-detection measures
-            // Try to find Chrome executable
-            try {
-                this.execPath = puppeteer.executablePath();
-            } catch (e) {
-                // Fallback to system Chrome if Puppeteer's bundled Chrome fails
-                const possiblePaths = [
-                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-                    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-                ];
-                this.execPath = possiblePaths.find(p => require('fs').existsSync(p));
-            }
 
             this.browser = await puppeteer.launch({
                 headless: false,
@@ -309,13 +317,8 @@ class DiscordBrowser extends EventEmitter {
                 // No CDP interception when WebRTC is enabled - let it work normally
             }
 
-            // Set proxy authentication if needed
-            if (this.options.proxy && this.options.proxy.username && this.options.proxy.password) {
-                await this.page.authenticate({
-                    username: this.options.proxy.username,
-                    password: this.options.proxy.password
-                });
-            }
+            // Note: Proxy authentication is already handled in the proxy URL
+            // No need for separate page.authenticate() when using proxy-chain
 
             // If we have a token, set it before navigation
             if (this.options.token) {
@@ -404,20 +407,34 @@ class DiscordBrowser extends EventEmitter {
                         timeout: 30000
                     });
                 } catch (navError) {
-                    console.log(`Failed to navigate to ${randomEngine.name}, trying Google as fallback`);
-                    // Fallback to Google if search engine fails (proxy might block certain sites)
-                    try {
-                        await this.page.goto('https://www.google.com/search?q=' + encodeURIComponent(randomQuery), {
-                            waitUntil: 'domcontentloaded',
-                            timeout: 30000
-                        });
-                    } catch (fallbackError) {
-                        console.log('Fallback to Google also failed, navigating to Discord directly');
-                        // Last resort - go directly to Discord
-                        await this.page.goto('https://discord.com', {
-                            waitUntil: 'domcontentloaded',
-                            timeout: 30000
-                        });
+                    console.log(`Failed to navigate to ${randomEngine.name}: ${navError.message}`);
+
+                    // If proxy is failing, offer to disable it and continue
+                    if (navError.message.includes('ERR_TUNNEL_CONNECTION_FAILED') || navError.message.includes('ERR_PROXY_CONNECTION_FAILED')) {
+                        console.error('Proxy connection failed. The proxy server is not responding.');
+
+                        // Close the proxy and restart without it
+                        if (this.proxyUrl) {
+                            console.log('Disabling proxy and continuing...');
+                            // Navigate to a blank page first
+                            await this.page.goto('about:blank');
+                            // Emit warning
+                            this.emit('proxy-failed', 'Proxy connection failed. Browser launched but without proxy protection.');
+                        }
+                    } else {
+                        // Try fallback navigation
+                        console.log('Trying Google as fallback...');
+                        try {
+                            await this.page.goto('https://www.google.com/search?q=' + encodeURIComponent(randomQuery), {
+                                waitUntil: 'domcontentloaded',
+                                timeout: 30000
+                            });
+                        } catch (fallbackError) {
+                            console.log('Fallback also failed. Navigating to blank page...');
+                            // Just go to blank page - browser is still launched successfully
+                            await this.page.goto('about:blank');
+                            console.log('Browser launched successfully. You can navigate manually.');
+                        }
                     }
                 }
             }
